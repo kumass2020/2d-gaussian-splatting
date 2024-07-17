@@ -107,7 +107,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     )
 
     # Customized
-    render_noise = allmap[7:10].detach()
+    noise_map = allmap[7:10].detach()
     allmap = allmap[:7]
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
@@ -181,14 +181,14 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     # Customized
     global count
-    # if count == 2000:
-    # render_noise = render_noise
-    # image_arr = rendered_image.permute(1, 2, 0).cpu().detach().numpy()
-    # noise_arr = render_noise.permute(1, 2, 0).cpu().detach().numpy()
-    # normalized_arr = normalize_arr_to_255(noise_arr)
-    # clamped_tensor = torch.clamp(render_noise, 0, 255)
-    # normalized_tensor = normalize_to_255(render_noise)
-        # print("2000")
+    if count == 2000:
+        render_noise = noise_map
+        image_arr = rendered_image.permute(1, 2, 0).cpu().detach().numpy()
+        noise_arr = render_noise.permute(1, 2, 0).cpu().detach().numpy()
+        normalized_arr = normalize_arr_to_255(noise_arr)
+        # clamped_tensor = torch.clamp(render_noise, 0, 255)
+        normalized_tensor = normalize_to_255(render_noise)
+        print("2000")
     # else:
     #     allmap = allmap[:7]
 
@@ -213,8 +213,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             'rend_dist': render_dist,
             'surf_depth': surf_depth,
             'surf_normal': surf_normal,
-            # Customized
-            'rend_noise': render_noise,
     })
 
     return rets

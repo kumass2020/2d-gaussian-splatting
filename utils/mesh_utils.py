@@ -94,6 +94,10 @@ class GaussianExtractor(object):
         self.rgbmaps = []
         # self.normals = []
         # self.depth_normals = []
+
+        # Customized
+        self.noisemaps = []
+
         self.viewpoint_stack = []
 
     @torch.no_grad()
@@ -110,16 +114,26 @@ class GaussianExtractor(object):
             normal = torch.nn.functional.normalize(render_pkg['rend_normal'], dim=0)
             depth = render_pkg['surf_depth']
             depth_normal = render_pkg['surf_normal']
+            # Customized
+            noise = render_pkg['rend_noise']
+
             self.rgbmaps.append(rgb.cpu())
             self.depthmaps.append(depth.cpu())
             # self.alphamaps.append(alpha.cpu())
             # self.normals.append(normal.cpu())
             # self.depth_normals.append(depth_normal.cpu())
+
+            # Customized
+            self.noisemaps.append(noise.cpu())
         
         # self.rgbmaps = torch.stack(self.rgbmaps, dim=0)
         # self.depthmaps = torch.stack(self.depthmaps, dim=0)
         # self.alphamaps = torch.stack(self.alphamaps, dim=0)
         # self.depth_normals = torch.stack(self.depth_normals, dim=0)
+
+        # Customized
+        self.noisemaps = torch.stack(self.depthmaps, dim=0)
+
         self.estimate_bounding_sphere()
 
     def estimate_bounding_sphere(self):
@@ -293,3 +307,6 @@ class GaussianExtractor(object):
             save_img_f32(self.depthmaps[idx][0].cpu().numpy(), os.path.join(vis_path, 'depth_{0:05d}'.format(idx) + ".tiff"))
             # save_img_u8(self.normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'normal_{0:05d}'.format(idx) + ".png"))
             # save_img_u8(self.depth_normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'depth_normal_{0:05d}'.format(idx) + ".png"))
+
+            # Customized
+            save_img_u8(self.noisemaps[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'noise_{0:05d}'.format(idx) + ".png"))
