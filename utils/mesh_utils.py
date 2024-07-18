@@ -132,7 +132,7 @@ class GaussianExtractor(object):
         # self.depth_normals = torch.stack(self.depth_normals, dim=0)
 
         # Customized
-        self.noisemaps = torch.stack(self.depthmaps, dim=0)
+        # self.noisemaps = torch.stack(self.depthmaps, dim=0)
 
         self.estimate_bounding_sphere()
 
