@@ -309,4 +309,4 @@ class GaussianExtractor(object):
             # save_img_u8(self.depth_normals[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'depth_normal_{0:05d}'.format(idx) + ".png"))
 
             # Customized
-            save_img_u8(self.noisemaps[idx].permute(1,2,0).cpu().numpy() * 0.5 + 0.5, os.path.join(vis_path, 'noise_{0:05d}'.format(idx) + ".png"))
+            save_img_u8(self.noisemaps[idx].permute(1,2,0).cpu().numpy(), os.path.join(vis_path, 'noise_{0:05d}'.format(idx) + ".png"))

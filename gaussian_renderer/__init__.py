@@ -167,6 +167,16 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
         return normalized_tensor
 
+    def normalize_to_1(tensor):
+        # Find the minimum and maximum values in the tensor
+        min_val = tensor.min()
+        max_val = tensor.max()
+
+        # Perform min-max normalization
+        normalized_tensor = (tensor - min_val) / (max_val - min_val)
+
+        return normalized_tensor
+
     def normalize_arr_to_1(arr):
         import numpy as np
 
@@ -187,7 +197,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # noise_arr = render_noise.permute(1, 2, 0).cpu().detach().numpy()
     # normalized_arr = normalize_arr_to_255(noise_arr)
     # clamped_tensor = torch.clamp(render_noise, 0, 255)
-    # normalized_tensor = normalize_to_255(render_noise)
+    normalized_tensor = normalize_to_1(render_noise)
         # print("2000")
     # else:
     #     allmap = allmap[:7]
@@ -214,7 +224,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             'surf_depth': surf_depth,
             'surf_normal': surf_normal,
             # Customized
-            'rend_noise': render_noise,
+            'rend_noise': normalized_tensor,
     })
 
     return rets

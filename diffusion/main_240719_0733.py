@@ -8,7 +8,6 @@ from torchvision import transforms
 from tqdm import tqdm
 from diffusers import DDPMPipeline, DDPMScheduler, UNet2DModel
 from torch_fidelity import calculate_metrics
-import numpy as np
 
 # Set model ID
 model_id = "google/ddpm-ema-church-256"
@@ -59,7 +58,7 @@ def preprocess_and_save_images(dataset_dir, output_dir, sample_size):
     ])
 
     dataset = FlatImageDataset(root_dir=dataset_dir, transform=transform)
-    loader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=4)  # Use num_workers=0 to avoid multiprocessing issues
+    loader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=4)
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -76,20 +75,9 @@ verify_and_clean_images(real_images_dir)
 preprocessed_real_images_dir = 'preprocessed_real_images'
 preprocess_and_save_images(real_images_dir, preprocessed_real_images_dir, sample_size)
 
-# Function to normalize noise in 16x16 tiles
-def normalize_tiles(image_tensor, tile_size=16):
-    c, h, w = image_tensor.shape
-    for i in range(0, h, tile_size):
-        for j in range(0, w, tile_size):
-            tile = image_tensor[:, i:i+tile_size, j:j+tile_size]
-            mean = tile.mean(dim=[1, 2], keepdim=True)
-            std = tile.std(dim=[1, 2], keepdim=True)
-            image_tensor[:, i:i+tile_size, j+j+tile_size] = (tile - mean) / (std + 1e-8)
-    return image_tensor
-
 # Function to generate and save images
 def generate_and_save_images(model, scheduler, noise=None, noise_dir=None, num_images=100, sample_size=256,
-                             output_dir='output_dm', use_normalization=True, use_normalize_tiles=False):
+                             output_dir='output_dm', use_normalization=True):
     os.makedirs(output_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -107,12 +95,8 @@ def generate_and_save_images(model, scheduler, noise=None, noise_dir=None, num_i
             transform = transforms.Compose([
                 transforms.Resize((sample_size, sample_size)),
                 transforms.ToTensor(),
-                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
             ])
             input = transform(noise_image).unsqueeze(0).to(device)
-
-            if use_normalize_tiles:
-                input = normalize_tiles(input.squeeze(0)).unsqueeze(0)
 
             if use_normalization:
                 # Calculate mean and std of the input tensor
@@ -131,8 +115,6 @@ def generate_and_save_images(model, scheduler, noise=None, noise_dir=None, num_i
         image = image.cpu().permute(0, 2, 3, 1).numpy()[0]
         image = Image.fromarray((image * 255).round().astype("uint8"))
         image.save(f"{output_dir}/image_{i}.png")
-
-    torch.cuda.empty_cache()  # Clean up CUDA memory
 
 # Function to plot 25 images in a 5x5 grid
 def plot_images_grid(output_dir='output_dm', num_images=25):
@@ -155,70 +137,24 @@ def calculate_fid_is(generated_dir, real_dir):
     is_value = metrics['inception_score_mean']
     return fid_value, is_value
 
-# Function to run experiments multiple times and average metrics
-def run_experiment_multiple_times(run_count=5):
-    random_fids, random_iss = [], []
-    predefined_fids, predefined_iss = [], []
-    predefined_nn_fids, predefined_nn_iss = [], []
+# Generate and save images with totally random noise
+random_noise_output_dir = 'output_dm/random_noise'
+generate_and_save_images(model, scheduler, noise=torch.randn(1, 3, sample_size, sample_size).to("cuda"),
+                         num_images=100, sample_size=256, output_dir=random_noise_output_dir, use_normalization=False)
 
-    for _ in range(run_count):
-        # Generate and save images with totally random noise
-        random_noise_output_dir = 'output_dm/random_noise'
-        generate_and_save_images(model, scheduler, noise=torch.randn(1, 3, sample_size, sample_size).to("cuda"),
-                                 num_images=100, sample_size=256, output_dir=random_noise_output_dir, use_normalization=False)
+# Generate and save images with predefined noise
+predefined_noise_output_dir = 'output_dm/predefined_noise'
+generate_and_save_images(model, scheduler, noise=None, noise_dir='output/240718-2337/train/ours_30000/vis',
+                         num_images=100, sample_size=256, output_dir=predefined_noise_output_dir, use_normalization=True)
 
-        # Generate and save images with predefined noise
-        predefined_noise_output_dir = 'output_dm/predefined_noise'
-        generate_and_save_images(model, scheduler, noise=None, noise_dir='output/240718-2337/train/ours_30000/vis',
-                                 num_images=100, sample_size=256, output_dir=predefined_noise_output_dir, use_normalization=True)
+# Calculate FID and IS for random noise images
+fid_random, is_random = calculate_fid_is(random_noise_output_dir, preprocessed_real_images_dir)
+print(f"Random Noise - FID: {fid_random}, IS: {is_random}")
 
-        # Generate and save images with predefined noise without normalization
-        predefined_noise_nn_output_dir = 'output_dm/predefined_noise_nn'
-        generate_and_save_images(model, scheduler, noise=None, noise_dir='output/240718-2337/train/ours_30000/vis',
-                                 num_images=100, sample_size=256, output_dir=predefined_noise_nn_output_dir, use_normalization=False)
+# Calculate FID and IS for predefined noise images
+fid_predefined, is_predefined = calculate_fid_is(predefined_noise_output_dir, preprocessed_real_images_dir)
+print(f"Predefined Noise - FID: {fid_predefined}, IS: {is_predefined}")
 
-        # Generate and save images with tile-normalized noise
-        # tile_normalized_noise_output_dir = 'output_dm/tile_normalized_noise'
-        # generate_and_save_images(model, scheduler, noise=None, noise_dir='output/240718-2337/train/ours_30000/vis',
-        #                          num_images=100, sample_size=256, output_dir=tile_normalized_noise_output_dir, use_normalize_tiles=True)
-
-        # Calculate FID and IS for random noise images
-        fid_random, is_random = calculate_fid_is(random_noise_output_dir, preprocessed_real_images_dir)
-        random_fids.append(fid_random)
-        random_iss.append(is_random)
-        print(f"Random Noise - FID: {fid_random}, IS: {is_random}")
-
-        # Calculate FID and IS for predefined noise images
-        fid_predefined, is_predefined = calculate_fid_is(predefined_noise_output_dir, preprocessed_real_images_dir)
-        predefined_fids.append(fid_predefined)
-        predefined_iss.append(is_predefined)
-        print(f"Predefined Noise - FID: {fid_predefined}, IS: {is_predefined}")
-
-        # Calculate FID and IS for predefined noise images without normalization
-        fid_predefined_nn, is_predefined_nn = calculate_fid_is(predefined_noise_nn_output_dir, preprocessed_real_images_dir)
-        predefined_nn_fids.append(fid_predefined_nn)
-        predefined_nn_iss.append(is_predefined_nn)
-        print(f"Predefined Noise without normalization - FID: {fid_predefined_nn}, IS: {is_predefined_nn}")
-
-        # Calculate FID and IS for tile-normalized noise images
-        # fid_tile_normalized, is_tile_normalized = calculate_fid_is(tile_normalized_noise_output_dir, preprocessed_real_images_dir)
-        # print(f"Tile Normalized Noise - FID: {fid_tile_normalized}, IS: {is_tile_normalized}")
-
-    print("\nAveraged Metrics:")
-    print(f"Random Noise - Average FID: {np.mean(random_fids)}, Average IS: {np.mean(random_iss)}")
-    print(f"Predefined Noise - Average FID: {np.mean(predefined_fids)}, Average IS: {np.mean(predefined_iss)}")
-    print(f"Predefined Noise without normalization - Average FID: {np.mean(predefined_nn_fids)}, Average IS: {np.mean(predefined_nn_iss)}")
-    print(f"Predefined Noise with tile-based normalization - Average FID: {np.mean(predefined_fids)}, Average IS: {np.mean(predefined_iss)}")
-
-
-# Run the experiment multiple times
-run_experiment_multiple_times(run_count=5)
-
-# Uncomment the following lines to use tile normalization approach in the future
-
-
-# Plot images for the first run (adjust paths accordingly if running multiple times)
+# Plot images
 plot_images_grid(random_noise_output_dir, num_images=25)
 plot_images_grid(predefined_noise_output_dir, num_images=25)
-plot_images_grid(predefined_noise_nn_output_dir, num_images=25)
-# plot_images_grid(tile_normalized_noise_output_dir, num_images=25)
