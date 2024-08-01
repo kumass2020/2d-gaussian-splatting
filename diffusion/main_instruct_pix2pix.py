@@ -10,7 +10,7 @@ pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(model_id, torch_dt
 pipe.to("cuda")
 pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
 # `image` is an RGB PIL.Image
-image = Image.open('output/240718-2337/train/ours_30000/gt/00000.png')
+image = Image.open('../output/240718-2337/train/ours_30000/gt/00000.png')
 images = pipe("make the truck made of glass", image=image).images
 
 images[0].save("output_dm/image.png")

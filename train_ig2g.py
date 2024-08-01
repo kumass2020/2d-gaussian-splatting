@@ -104,8 +104,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 do_classifier_free_guidance=True,
                 negative_prompt=""
             )
-            rendered_image = image
-            original_image = editing_camera.original_image
+            rendered_image = image.unsqueeze(0)
+            original_image = editing_camera.original_image.unsqueeze(0)
 
             # edit the image using ip2p
             edited_image = ip2p.edit_image(
@@ -119,14 +119,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 upper_bound=0.98,
             )
 
-            # Update edited image
-            editing_camera.edited_image = edited_image
+            # resize to original image size (often not necessary)
+            if (edited_image.size() != rendered_image.size()):
+                edited_image = torch.nn.functional.interpolate(edited_image, size=rendered_image.size()[2:],
+                                                               mode='bilinear')
 
-            gt_image = viewpoint_cam.edited_image.cuda()
+            # Update edited image
+            viewpoint_cam.edited_image = edited_image
+
+            gt_image = edited_image.cuda()
         else:
             gt_image = viewpoint_cam.original_image.cuda()
 
         Ll1 = l1_loss(image, gt_image)
+        # Ensure the input tensor is of the same type as the autoencoder's expected input
+        gt_image = gt_image.to(image.dtype)
         loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
 
         # regularization
@@ -356,8 +363,8 @@ if __name__ == "__main__":
     parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000, 40_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000, 40_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000, 35_000, 40_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000, 35_000, 40_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)

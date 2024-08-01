@@ -6,7 +6,7 @@ from PIL import Image
 from tqdm import tqdm
 
 # Define directories
-real_images_dir = 'real_images'
+real_images_dir = '../real_images'
 os.makedirs(real_images_dir, exist_ok=True)
 
 # Transform to resize images and convert them to tensors

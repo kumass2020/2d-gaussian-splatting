@@ -21,6 +21,6 @@ def extract_lmdb_images(lmdb_path, output_dir, num_images=1000):
             img.save(os.path.join(output_dir, f'image_{i}.png'))
 
 
-lmdb_path = 'data/church_outdoor_train_lmdb'
-output_dir = 'real_images'
+lmdb_path = '../data/church_outdoor_train_lmdb'
+output_dir = '../real_images'
 extract_lmdb_images(lmdb_path, output_dir, num_images=1000)

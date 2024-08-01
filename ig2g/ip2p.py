@@ -197,7 +197,11 @@ class InstructPix2Pix(nn.Module):
         Returns:
             Latents
         """
-        imgs = 2 * imgs - 1
+        # Convert images to the range [-1, 1]
+        # imgs = 2 * imgs - 1
+
+        # Ensure the input tensor is of the same type as the autoencoder's expected input
+        imgs = imgs.to(self.auto_encoder.dtype)
 
         posterior = self.auto_encoder.encode(imgs).latent_dist
         latents = posterior.sample() * CONST_SCALE
@@ -211,7 +215,11 @@ class InstructPix2Pix(nn.Module):
         Returns:
             Latents
         """
-        imgs = 2 * imgs - 1
+        # Convert images to the range [-1, 1]
+        # imgs = 2 * imgs - 1
+
+        # Ensure the input tensor is of the same type as the autoencoder's expected input
+        imgs = imgs.to(self.auto_encoder.dtype)
 
         image_latents = self.auto_encoder.encode(imgs).latent_dist.mode()
 

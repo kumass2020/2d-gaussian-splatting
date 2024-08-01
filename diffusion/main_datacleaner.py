@@ -13,5 +13,5 @@ def verify_and_clean_images(directory):
                 os.remove(filepath)
 
 # Verify and clean images in the real_images directory
-real_images_dir = 'real_images'  # Ensure this is the correct path
+real_images_dir = '../real_images'  # Ensure this is the correct path
 verify_and_clean_images(real_images_dir)

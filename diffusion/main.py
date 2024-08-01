@@ -69,11 +69,11 @@ def preprocess_and_save_images(dataset_dir, output_dir, sample_size):
             img_pil.save(os.path.join(output_dir, f'image_{i * img.size(0) + j}.png'))
 
 # Verify and clean images in the real_images directory
-real_images_dir = 'real_images'
+real_images_dir = '../real_images'
 verify_and_clean_images(real_images_dir)
 
 # Preprocess and save images
-preprocessed_real_images_dir = 'preprocessed_real_images'
+preprocessed_real_images_dir = '../preprocessed_real_images'
 preprocess_and_save_images(real_images_dir, preprocessed_real_images_dir, sample_size)
 
 # Function to normalize noise in 16x16 tiles
@@ -163,18 +163,18 @@ def run_experiment_multiple_times(run_count=5):
 
     for _ in range(run_count):
         # Generate and save images with totally random noise
-        random_noise_output_dir = 'output_dm/random_noise'
+        random_noise_output_dir = '../output_dm/random_noise'
         generate_and_save_images(model, scheduler, noise=torch.randn(1, 3, sample_size, sample_size).to("cuda"),
                                  num_images=100, sample_size=256, output_dir=random_noise_output_dir, use_normalization=False)
 
         # Generate and save images with predefined noise
-        predefined_noise_output_dir = 'output_dm/predefined_noise'
-        generate_and_save_images(model, scheduler, noise=None, noise_dir='output/240718-2337/train/ours_30000/vis',
+        predefined_noise_output_dir = '../output_dm/predefined_noise'
+        generate_and_save_images(model, scheduler, noise=None, noise_dir='../output/240718-2337/train/ours_30000/vis',
                                  num_images=100, sample_size=256, output_dir=predefined_noise_output_dir, use_normalization=True)
 
         # Generate and save images with predefined noise without normalization
-        predefined_noise_nn_output_dir = 'output_dm/predefined_noise_nn'
-        generate_and_save_images(model, scheduler, noise=None, noise_dir='output/240718-2337/train/ours_30000/vis',
+        predefined_noise_nn_output_dir = '../output_dm/predefined_noise_nn'
+        generate_and_save_images(model, scheduler, noise=None, noise_dir='../output/240718-2337/train/ours_30000/vis',
                                  num_images=100, sample_size=256, output_dir=predefined_noise_nn_output_dir, use_normalization=False)
 
         # Generate and save images with tile-normalized noise
