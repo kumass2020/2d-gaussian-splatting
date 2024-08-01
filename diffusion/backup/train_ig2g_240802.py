@@ -31,67 +31,6 @@ except ImportError:
 
 from ig2g.ip2p import InstructPix2Pix
 import wandb
-from PIL import Image
-import numpy as np
-from datetime import datetime
-
-# Set up a global variable for date_str to use the same directory in a run
-DATE_STR = datetime.now().strftime('%y%H%M')
-
-
-# Set up a global variable for date_str to use the same directory in a run
-DATE_STR = datetime.now().strftime('%y%H%M')
-
-def save_image_tensor(tensor, iteration, image_name, base_directory='./output_ig2g'):
-    # Ensure the tensor is on the CPU and detached from the computation graph
-    tensor = tensor.detach().cpu()
-
-    # Convert tensor to numpy array
-    array = tensor.numpy()
-
-    # Convert the array to (H, W, C) format
-    array = np.transpose(array, (1, 2, 0))
-
-    # Convert array to uint8 type for image saving
-    array = (array * 255).astype(np.uint8)
-
-    # Create an Image object
-    image = Image.fromarray(array)
-
-    # Create the output directory if it doesn't exist
-    output_dir = os.path.join(base_directory, DATE_STR)
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Define the image file path
-    image_path = os.path.join(output_dir, f'iter{iteration}_{image_name}.png')
-
-    # Save the image
-    image.save(image_path)
-
-    print(f"Image saved to {image_path}")
-
-def render_all_cameras(scene, gaussians, pipe, background, iteration):
-    all_cameras = scene.getTrainCameras()
-    print(f"Rendering images for iteration {iteration}...")
-
-    for camera in tqdm(all_cameras, desc="Rendering images from all cameras"):
-        render_pkg = render(camera, gaussians, pipe, background)
-        image = render_pkg["render"]
-
-        # Use camera.image_name as the image_name
-        image_name = camera.image_name
-
-        # Save the rendered image
-        save_image_tensor(image, iteration, image_name)
-
-    print(f"Rendering and saving images for iteration {iteration} complete.")
-
-
-def clone_edited_images(scene):
-    all_cameras = scene.getTrainCameras()
-
-    for camera in tqdm(all_cameras, desc="original image to edited image"):
-        camera.edited_image = camera.original_image
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
@@ -100,8 +39,6 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     gaussians = GaussianModel(dataset.sh_degree)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
-
-    clone_edited_images(scene)
 
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -119,6 +56,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     viewpoint_stack = None
     viewpoint_stack_idu = None
+    popped_cameras = None
     ema_loss_for_log = 0.0
     ema_dist_for_log = 0.0
     ema_normal_for_log = 0.0
@@ -139,8 +77,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
+            popped_cameras = []
         rand_idx = randint(0, len(viewpoint_stack) - 1)
         viewpoint_cam = viewpoint_stack.pop(rand_idx)
+
+        # Add the popped camera to the list of popped cameras
+        popped_cameras.append(viewpoint_cam)
 
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], \
@@ -154,13 +96,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             return None
 
         # ip2p
-        if iteration > 15000 and iteration % 10 == 0:
+        if iteration > 30000 and iteration % 10 == 0:
             # Pick a random Camera
-            if not viewpoint_stack_idu:
-                viewpoint_stack_idu = scene.getTrainCameras().copy()
-            rand_idx = randint(0, len(viewpoint_stack_idu) - 1)
-            editing_camera_copy = viewpoint_stack_idu.pop(rand_idx)
-            editing_camera = get_identical_camera(editing_camera_copy)
+            if not viewpoint_stack:
+                viewpoint_stack = scene.getTrainCameras().copy()
+                popped_cameras = []
+            rand_idx = randint(0, len(viewpoint_stack) - 1)
+            viewpoint_cam = viewpoint_stack.pop(rand_idx)
+
+            editing_camera = get_identical_camera(viewpoint_cam)
 
             # load base text embedding using classifier free guidance
             text_embedding = ip2p.pipe._encode_prompt(
@@ -189,9 +133,11 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                                                                mode='bilinear')
 
             # Update edited image
-            editing_camera.edited_image = edited_image
+            viewpoint_cam.edited_image = edited_image
 
-        gt_image = viewpoint_cam.edited_image.cuda()
+            gt_image = edited_image.cuda()
+        else:
+            gt_image = viewpoint_cam.original_image.cuda()
 
         Ll1 = l1_loss(image, gt_image)
         # Ensure the input tensor is of the same type as the autoencoder's expected input
