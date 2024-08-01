@@ -15,7 +15,6 @@ from diff_surfel_rasterization import GaussianRasterizationSettings, GaussianRas
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
 from utils.point_utils import depth_to_normal
-count = 0
 
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
     """
@@ -105,10 +104,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         rotations = rotations,
         cov3D_precomp = cov3D_precomp
     )
-
-    # Customized
-    render_noise = allmap[7:10].detach()
-    allmap = allmap[:7]
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
@@ -139,71 +134,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # get depth distortion map
     render_dist = allmap[6:7]
 
-    def normalize_arr_to_255(arr):
-        import numpy as np
-
-        # Find the minimum and maximum values in the array
-        min_val = np.min(arr)
-        max_val = np.max(arr)
-
-        # Perform min-max normalization
-        normalized_arr = (arr - min_val) / (max_val - min_val) * 255
-
-        # Ensure the data type is uint8 for image representation
-        normalized_arr = normalized_arr.astype(np.uint8)
-
-        return normalized_arr
-
-    def normalize_to_255(tensor):
-        # Find the minimum and maximum values in the tensor
-        min_val = tensor.min()
-        max_val = tensor.max()
-
-        # Perform min-max normalization
-        normalized_tensor = (tensor - min_val) / (max_val - min_val) * 255
-
-        # Ensure the data type is uint8 for image representation
-        normalized_tensor = normalized_tensor.to(torch.uint8)
-
-        return normalized_tensor
-
-    def normalize_to_1(tensor):
-        # Find the minimum and maximum values in the tensor
-        min_val = tensor.min()
-        max_val = tensor.max()
-
-        # Perform min-max normalization
-        normalized_tensor = (tensor - min_val) / (max_val - min_val)
-
-        return normalized_tensor
-
-    def normalize_arr_to_1(arr):
-        import numpy as np
-
-        # Find the minimum and maximum values in the array
-        min_val = np.min(arr)
-        max_val = np.max(arr)
-
-        # Perform min-max normalization
-        normalized_arr = (arr - min_val) / (max_val - min_val)
-
-        return normalized_arr
-
-    # Customized
-    global count
-    # if count == 2000:
-    # render_noise = render_noise
-    # image_arr = rendered_image.permute(1, 2, 0).cpu().detach().numpy()
-    # noise_arr = render_noise.permute(1, 2, 0).cpu().detach().numpy()
-    # normalized_arr = normalize_arr_to_255(noise_arr)
-    # clamped_tensor = torch.clamp(render_noise, 0, 255)
-    normalized_tensor = normalize_to_1(render_noise)
-        # print("2000")
-    # else:
-    #     allmap = allmap[:7]
-
-    count += 1
-
     # psedo surface attributes
     # surf depth is either median or expected by setting depth_ratio to 1 or 0
     # for bounded scene, use median depth, i.e., depth_ratio = 1; 
@@ -223,8 +153,6 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             'rend_dist': render_dist,
             'surf_depth': surf_depth,
             'surf_normal': surf_normal,
-            # Customized
-            'rend_noise': normalized_tensor,
     })
 
     return rets

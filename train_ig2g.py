@@ -40,7 +40,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
 
-    ip2p = InstructPix2Pix("cuda", ip2p_use_full_precision=False)
+    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    ip2p = InstructPix2Pix(torch_device, ip2p_use_full_precision=False)
 
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
@@ -98,7 +100,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # load base text embedding using classifier free guidance
             text_embedding = ip2p.pipe._encode_prompt(
-                "Make it look like it just snowed.", device="cuda", num_images_per_prompt=1,
+                "Make it look like it just snowed.", device=torch_device, num_images_per_prompt=1,
                 do_classifier_free_guidance=True,
                 negative_prompt=""
             )
@@ -107,9 +109,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
             # edit the image using ip2p
             edited_image = ip2p.edit_image(
-                text_embedding.to("cuda"),
-                rendered_image.to("cuda"),
-                original_image.to("cuda"),
+                text_embedding.to(torch_device),
+                rendered_image.to(torch_device),
+                original_image.to(torch_device),
                 guidance_scale=12.5,  # text guidance scale
                 image_guidance_scale=1.5,
                 diffusion_steps=20,
@@ -258,6 +260,8 @@ def prepare_output_and_logger(args):
 @torch.no_grad()
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene: Scene, renderFunc,
                     renderArgs):
+    torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/reg_loss', Ll1.item(), iteration)
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
@@ -281,7 +285,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 for idx, viewpoint in enumerate(config['cameras']):
                     render_pkg = renderFunc(viewpoint, scene.gaussians, *renderArgs)
                     image = torch.clamp(render_pkg["render"], 0.0, 1.0)
-                    gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
+                    gt_image = torch.clamp(viewpoint.original_image.to(torch_device), 0.0, 1.0)
                     if tb_writer and (idx < 5):
                         from utils.general_utils import colormap
                         depth = render_pkg["surf_depth"]
