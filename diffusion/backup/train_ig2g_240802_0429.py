@@ -99,14 +99,19 @@ def clone_edited_images(scene):
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     # Log the ip2p parameters to wandb
-    ip2p_params = {
-        "guidance_scale": 12.5,
-        "image_guidance_scale": 1.5,
-        "diffusion_steps": 20,
-        "lower_bound": 0.7,
-        "upper_bound": 0.98
-    }
-    wandb.config.update(ip2p_params)
+    guidance_scale = 7.5
+    image_guidance_scale = 1.5
+    diffusion_steps = 20
+    lower_bound = 0.02
+    upper_bound = 0.98
+
+    wandb.log({
+        "guidance_scale": guidance_scale,
+        "image_guidance_scale": image_guidance_scale,
+        "diffusion_steps": diffusion_steps,
+        "lower_bound": lower_bound,
+        "upper_bound": upper_bound
+    })
 
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -131,6 +136,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     iter_end = torch.cuda.Event(enable_timing=True)
 
     viewpoint_stack = None
+    viewpoint_stack_idu = None
     ema_loss_for_log = 0.0
     ema_dist_for_log = 0.0
     ema_normal_for_log = 0.0
@@ -166,45 +172,42 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             return None
 
         # ip2p
-        if iteration >= 20000 and iteration % 2500 == 0:
+        if iteration > 15000 and iteration % 50 == 0:
+            # Pick a random Camera
+            if not viewpoint_stack_idu:
+                viewpoint_stack_idu = scene.getTrainCameras().copy()
+            rand_idx = randint(0, len(viewpoint_stack_idu) - 1)
+            editing_camera_copy = viewpoint_stack_idu.pop(rand_idx)
+            editing_camera = get_identical_camera(editing_camera_copy)
+
             # load base text embedding using classifier free guidance
             text_embedding = ip2p.pipe._encode_prompt(
                 "Make it look like it just snowed.", device=torch_device, num_images_per_prompt=1,
                 do_classifier_free_guidance=True,
                 negative_prompt=""
             )
+            rendered_image = image.unsqueeze(0)
+            original_image = editing_camera.original_image.unsqueeze(0)
 
-            for camera in scene.getTrainCameras():
-                render_pkg = render(camera, gaussians, pipe, background)
-                image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg[
-                    "viewspace_points"], \
-                    render_pkg["visibility_filter"], render_pkg["radii"]
+            # edit the image using ip2p
+            edited_image = ip2p.edit_image(
+                text_embedding.to(torch_device),
+                rendered_image.to(torch_device),
+                original_image.to(torch_device),
+                guidance_scale=guidance_scale,  # text guidance scale
+                image_guidance_scale=image_guidance_scale,
+                diffusion_steps=diffusion_steps,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+            )
 
-                rendered_image = image.unsqueeze(0)
-                original_image = camera.original_image.unsqueeze(0)
+            # resize to original image size (often not necessary)
+            if (edited_image.size() != rendered_image.size()):
+                edited_image = torch.nn.functional.interpolate(edited_image, size=rendered_image.size()[2:],
+                                                               mode='bilinear')
 
-                # edit the image using ip2p
-                edited_image = ip2p.edit_image(
-                    text_embedding.to(torch_device),
-                    rendered_image.to(torch_device),
-                    original_image.to(torch_device),
-                    guidance_scale=guidance_scale,  # text guidance scale
-                    image_guidance_scale=image_guidance_scale,
-                    diffusion_steps=diffusion_steps,
-                    lower_bound=lower_bound,
-                    upper_bound=upper_bound,
-                )
-
-                # resize to original image size (often not necessary)
-                if (edited_image.size() != rendered_image.size()):
-                    edited_image = torch.nn.functional.interpolate(edited_image, size=rendered_image.size()[2:],
-                                                                   mode='bilinear')
-
-                # Update edited image
-                camera.edited_image = edited_image
-
-        if iteration == 27400:
-            render_all_cameras(scene, dataset.source_path, gaussians, pipe, background, iteration)
+            # Update edited image
+            editing_camera.edited_image = edited_image
 
         gt_image = viewpoint_cam.edited_image.cuda()
 
@@ -324,7 +327,7 @@ def prepare_output_and_logger(args):
             unique_str = os.getenv('OAR_JOB_ID')
         else:
             unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output/", unique_str[0:10])
+        args.model_path = os.path.join("../../output/", unique_str[0:10])
 
     # Set up output folder
     print("Output folder: {}".format(args.model_path))

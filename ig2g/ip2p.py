@@ -198,7 +198,7 @@ class InstructPix2Pix(nn.Module):
             Latents
         """
         # Convert images to the range [-1, 1]
-        # imgs = 2 * imgs - 1
+        imgs = 2 * imgs - 1
 
         # Ensure the input tensor is of the same type as the autoencoder's expected input
         imgs = imgs.to(self.auto_encoder.dtype)
@@ -216,7 +216,7 @@ class InstructPix2Pix(nn.Module):
             Latents
         """
         # Convert images to the range [-1, 1]
-        # imgs = 2 * imgs - 1
+        imgs = 2 * imgs - 1
 
         # Ensure the input tensor is of the same type as the autoencoder's expected input
         imgs = imgs.to(self.auto_encoder.dtype)
