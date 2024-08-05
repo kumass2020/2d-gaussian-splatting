@@ -36,7 +36,7 @@ import numpy as np
 from datetime import datetime
 
 # Set up a global variable for date_str to use the same directory in a run
-DATE_STR = datetime.now().strftime('%y%H%M')
+DATE_STR = datetime.now().strftime('%y%m_%H%M')
 
 
 def save_image_tensor(tensor, iteration, image_name, source_path, base_directory='./output_ig2g'):
@@ -361,11 +361,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
 def prepare_output_and_logger(args):
     if not args.model_path:
-        if os.getenv('OAR_JOB_ID'):
-            unique_str = os.getenv('OAR_JOB_ID')
-        else:
-            unique_str = str(uuid.uuid4())
-        args.model_path = os.path.join("./output/", unique_str[0:10])
+        # if os.getenv('OAR_JOB_ID'):
+        #     unique_str = os.getenv('OAR_JOB_ID')
+        # else:
+        #     unique_str = str(uuid.uuid4())
+        # args.model_path = os.path.join("./output/", unique_str[0:10])
+
+        args.model_path = os.path.join("./output/", DATE_STR)
 
     # Set up output folder
     print("Output folder: {}".format(args.model_path))
