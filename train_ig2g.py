@@ -100,13 +100,23 @@ def clone_edited_images(scene):
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     # Log the ip2p parameters to wandb
     ip2p_params = {
+        "ip2p_start_iter": 20000,
+        "ip2p_cycle_iter": 2500,
         "guidance_scale": 12.5,
         "image_guidance_scale": 1.5,
         "diffusion_steps": 20,
         "lower_bound": 0.7,
-        "upper_bound": 0.98
+        "upper_bound": 0.98,
+        "use_rendered_noise": True,
+        # 'None', 'direct', 'normalized', 'tile-normalized',
+        # 'direct-encoded', 'normalized-encoded', 'tile-normalized-encoded'
+        "noise_type": "direct-encoded",
+        "densification_schedule": "normal",
+        "ip2p_iter": 3,
     }
     wandb.config.update(ip2p_params)
+
+    ip2p_iteration = 0
 
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
@@ -166,33 +176,63 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             return None
 
         # ip2p
-        if iteration >= 20000 and iteration % 2500 == 0:
+        if (iteration > ip2p_params['ip2p_start_iter']
+                and iteration % ip2p_params['ip2p_cycle_iter'] == 1
+                and ip2p_iteration < ip2p_params['ip2p_iter']):
             # load base text embedding using classifier free guidance
             text_embedding = ip2p.pipe._encode_prompt(
-                "Make it look like it just snowed.", device=torch_device, num_images_per_prompt=1,
+                "Make it look like it just snowed.",
+                device=torch_device,
+                num_images_per_prompt=1,
                 do_classifier_free_guidance=True,
                 negative_prompt=""
             )
 
             for camera in scene.getTrainCameras():
                 render_pkg = render(camera, gaussians, pipe, background)
-                image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg[
-                    "viewspace_points"], \
-                    render_pkg["visibility_filter"], render_pkg["radii"]
+                image, viewspace_point_tensor, visibility_filter, radii, rendered_noise = (
+                    render_pkg["render"],
+                    render_pkg["viewspace_points"],
+                    render_pkg["visibility_filter"],
+                    render_pkg["radii"],
+                    render_pkg["rend_noise"]
+                )
+
+                # Downsample the rendered noise to latent size
+                C = image.shape[0]
+                H = int(image.shape[1] / 8)
+                W = int(image.shape[2] / 8)
+
+                # Process the noise, following noise_type
+                if ip2p_params['noise_type'] == "direct":
+                    pass
+                elif ip2p_params['noise_type'] == "normalized":
+                    pass
+                elif ip2p_params['noise_type'] == "tile-normalized":
+                    pass
+                elif ip2p_params['noise_type'] == 'direct-encoded':
+                    pass
+                elif ip2p_params['noise_type'] == "normalized-encoded":
+                    pass
+                elif ip2p_params['noise_type'] == "tile-normalized-encoded":
+                    pass
 
                 rendered_image = image.unsqueeze(0)
                 original_image = camera.original_image.unsqueeze(0)
+                rendered_noise = rendered_noise.unsqueeze(0)
 
                 # edit the image using ip2p
                 edited_image = ip2p.edit_image(
                     text_embedding.to(torch_device),
                     rendered_image.to(torch_device),
                     original_image.to(torch_device),
-                    guidance_scale=guidance_scale,  # text guidance scale
-                    image_guidance_scale=image_guidance_scale,
-                    diffusion_steps=diffusion_steps,
-                    lower_bound=lower_bound,
-                    upper_bound=upper_bound,
+                    rendered_noise.to(torch_device),
+                    guidance_scale=ip2p_params['guidance_scale'],  # text guidance scale
+                    image_guidance_scale=ip2p_params['image_guidance_scale'],
+                    diffusion_steps=ip2p_params['diffusion_steps'],
+                    lower_bound=ip2p_params['lower_bound'],
+                    upper_bound=ip2p_params['upper_bound'],
+                    noise_type=ip2p_params['noise_type']
                 )
 
                 # resize to original image size (often not necessary)
@@ -202,8 +242,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 # Update edited image
                 camera.edited_image = edited_image
+                ip2p_iteration += 1
 
-        if iteration == 27400:
+        if iteration in saving_iterations:
             render_all_cameras(scene, dataset.source_path, gaussians, pipe, background, iteration)
 
         gt_image = viewpoint_cam.edited_image.cuda()
@@ -440,8 +481,8 @@ if __name__ == "__main__":
     parser.add_argument('--ip', type=str, default="127.0.0.1")
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000, 35_000, 40_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000, 35_000, 40_000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 20_000, 27_500, 30_000, 40_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 20_000, 27_500, 30_000, 40_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default=None)

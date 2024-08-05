@@ -108,11 +108,13 @@ class InstructPix2Pix(nn.Module):
             text_embeddings: Float[Tensor, "N max_length embed_dim"],
             image: Float[Tensor, "BS 3 H W"],
             image_cond: Float[Tensor, "BS 3 H W"],
+            rendered_noise: Float[Tensor, "BS 3 H W"],
             guidance_scale: float = 7.5,
             image_guidance_scale: float = 1.5,
             diffusion_steps: int = 20,
             lower_bound: float = 0.70,
-            upper_bound: float = 0.98
+            upper_bound: float = 0.98,
+            noise_type: str = "None",
     ) -> torch.Tensor:
         """Edit an image for Instruct-NeRF2NeRF using InstructPix2Pix
         Args:
@@ -139,11 +141,20 @@ class InstructPix2Pix(nn.Module):
 
         with torch.no_grad():
             # prepare image and image_cond latents
-            latents = self.imgs_to_latent(image)
-            image_cond_latents = self.prepare_image_latents(image_cond)
+            latents = self.imgs_to_latent(image)    # image: (1, 3, 412, 622) | latents: (1, 4, 51, 77)
+            image_cond_latents = self.prepare_image_latents(image_cond)     # image_cond: (1, 3, 412, 622)
+            # image_cond_latents: (3, 4, 51, 77)
 
         # add noise
-        noise = torch.randn_like(latents)
+        if noise_type == 'None':
+            noise = torch.randn_like(latents)
+        else:
+            noise = rendered_noise
+
+        if 'encoded' in noise_type:
+            # project noise into latent using autoencoder
+            noise = self.prepare_noise_latents(noise)
+
         latents = self.scheduler.add_noise(latents, noise, self.scheduler.timesteps[0])  # type: ignore
 
         # sections of code used from https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_instruct_pix2pix.py
@@ -227,6 +238,18 @@ class InstructPix2Pix(nn.Module):
         image_latents = torch.cat([image_latents, image_latents, uncond_image_latents], dim=0)
 
         return image_latents
+
+    def prepare_noise_latents(self, imgs: Float[Tensor, "BS 3 H W"]) -> Float[Tensor, "BS 4 H W"]:
+        # Convert images to the range [-1, 1]
+        imgs = 2 * imgs - 1
+
+        # Ensure the input tensor is of the same type as the autoencoder's expected input
+        imgs = imgs.to(self.auto_encoder.dtype)
+
+        image_latents = self.auto_encoder.encode(imgs).latent_dist.mode()
+
+        return image_latents
+
 
     def forward(self):
         """Not implemented since we only want the parameter saving of the nn module, but not forward()"""
