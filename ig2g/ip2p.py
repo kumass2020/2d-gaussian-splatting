@@ -70,7 +70,8 @@ class InstructPix2Pix(nn.Module):
         self.num_train_timesteps = num_train_timesteps
         self.ip2p_use_full_precision = ip2p_use_full_precision
 
-        pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(IP2P_SOURCE, torch_dtype=torch.float16,
+        pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(IP2P_SOURCE,
+                                                                      torch_dtype=torch.float16,
                                                                       safety_checker=None)
         pipe.scheduler = DDIMScheduler.from_pretrained(DDIM_SOURCE, subfolder="scheduler")
         pipe.scheduler.set_timesteps(100)
@@ -141,19 +142,23 @@ class InstructPix2Pix(nn.Module):
 
         with torch.no_grad():
             # prepare image and image_cond latents
-            latents = self.imgs_to_latent(image)    # image: (1, 3, 412, 622) | latents: (1, 4, 51, 77)
-            image_cond_latents = self.prepare_image_latents(image_cond)     # image_cond: (1, 3, 412, 622)
+            latents = self.imgs_to_latent(image)  # image: (1, 3, 412, 622) | latents: (1, 4, 51, 77)
+
+            image_cond_latents = self.prepare_image_latents(image_cond)  # image_cond: (1, 3, 412, 622)
             # image_cond_latents: (3, 4, 51, 77)
 
-        # add noise
-        if noise_type == 'None':
-            noise = torch.randn_like(latents)
-        else:
-            noise = rendered_noise
+            # add noise
+            if noise_type == 'None' or 'concat' in noise_type:
+                noise = torch.randn_like(latents)
+            else:
+                noise = rendered_noise
 
-        if 'encoded' in noise_type:
-            # project noise into latent using autoencoder
-            noise = self.prepare_noise_latents(noise)
+            if 'encoded' in noise_type and 'concat' not in noise_type:
+                # project noise into latent using autoencoder
+                noise = self.prepare_noise_latents(noise)
+            elif 'concat' in noise_type:
+                noise_latents = self.prepare_noise_latents(rendered_noise)
+                image_cond_latents[1, :, :, :] = noise_latents
 
         latents = self.scheduler.add_noise(latents, noise, self.scheduler.timesteps[0])  # type: ignore
 
@@ -250,6 +255,38 @@ class InstructPix2Pix(nn.Module):
 
         return image_latents
 
+    def prepare_image_noise_latents(self, imgs: Float[Tensor, "BS 3 H W"], noise: Float[Tensor, "BS 3 H W"]) -> Float[Tensor, "BS 4 H W"]:
+        """Convert conditioning image to latents used for classifier-free guidance
+        Args:
+            imgs: Images to convert
+        Returns:
+            Latents
+        """
+        # Convert images to the range [-1, 1]
+        imgs = 2 * imgs - 1
+        noise = 2 * noise - 1
+
+        # Ensure the input tensor is of the same type as the autoencoder's expected input
+        imgs = imgs.to(self.auto_encoder.dtype)
+        image_latents = self.auto_encoder.encode(imgs).latent_dist.mode()
+
+        noise = noise.to(self.auto_encoder.dtype)
+        noise_latents = self.auto_encoder.encode(noise).latent_dist.mode()
+
+        uncond_image_latents = torch.zeros_like(image_latents)
+        image_latents = torch.cat([image_latents, image_latents, uncond_image_latents, noise_latents], dim=0)
+
+        return image_latents
+
+    def decode_latents_to_noise(self, latents: Float[Tensor, "BS 4 H W"]) -> Float[Tensor, "BS 3 H W"]:
+        # Decode the latents to get the noise
+        with torch.no_grad():
+            decoded_images = self.auto_encoder.decode(latents).sample
+
+        # Convert the noise from the range [-1, 1] to the range [0, 1]
+        decoded_images = (decoded_images + 1) / 2
+
+        return decoded_images
 
     def forward(self):
         """Not implemented since we only want the parameter saving of the nn module, but not forward()"""

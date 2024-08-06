@@ -33,10 +33,11 @@ from ig2g.ip2p import InstructPix2Pix
 import wandb
 from PIL import Image
 import numpy as np
+from torchvision import transforms
 from datetime import datetime
 
 # Set up a global variable for date_str to use the same directory in a run
-DATE_STR = datetime.now().strftime('%y%m_%H%M')
+DATE_STR = datetime.now().strftime('%y%m%d-%H%M')
 
 
 def save_image_tensor(tensor, iteration, image_name, source_path, base_directory='./output_ig2g'):
@@ -97,11 +98,22 @@ def clone_edited_images(scene):
         camera.edited_image = camera.original_image
 
 
+def normalize_noise(noise, device):
+    # Calculate mean and std of the input tensor
+    mean = noise.mean([0, 2, 3])
+    std = noise.std([0, 2, 3])
+    normalize = transforms.Normalize(mean, std)
+    noise = normalize(noise[0]).unsqueeze(0).to(device)
+
+    return noise
+
+
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     # Log the ip2p parameters to wandb
     ip2p_params = {
         "ip2p_start_iter": 20000,
         "ip2p_cycle_iter": 2500,
+        "ip2p_iter": 3,
         "guidance_scale": 12.5,
         "image_guidance_scale": 1.5,
         "diffusion_steps": 20,
@@ -109,10 +121,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         "upper_bound": 0.98,
         "use_rendered_noise": True,
         # 'None', 'direct', 'normalized', 'tile-normalized',
-        # 'direct-encoded', 'normalized-encoded', 'tile-normalized-encoded'
-        "noise_type": "direct-encoded",
+        # 'direct-encoded', 'normalized-encoded', 'tile-normalized-encoded',
+        # 'direct-encoded-concat'
+        "noise_type": "direct-encoded-concat",
         "densification_schedule": "normal",
-        "ip2p_iter": 3,
     }
     wandb.config.update(ip2p_params)
 
@@ -207,6 +219,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 if ip2p_params['noise_type'] == "direct":
                     pass
                 elif ip2p_params['noise_type'] == "normalized":
+                    noise = normalize(rendered_noise, torch_device)
                     pass
                 elif ip2p_params['noise_type'] == "tile-normalized":
                     pass
@@ -486,7 +499,7 @@ if __name__ == "__main__":
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 20_000, 27_500, 30_000, 40_000])
     parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 20_000, 27_500, 30_000, 40_000])
     parser.add_argument("--quiet", action="store_true")
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[20_000])
     parser.add_argument("--start_checkpoint", type=str, default=None)
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
