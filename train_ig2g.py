@@ -40,7 +40,7 @@ from datetime import datetime
 DATE_STR = datetime.now().strftime('%y%m%d-%H%M')
 
 
-def save_image_tensor(tensor, iteration, image_name, source_path, base_directory='./output_ig2g'):
+def save_image_tensor(tensor, iteration, image_name, source_path, is_edit=False, base_directory='./output_ig2g'):
     # Extract the scene name from the source path
     scene_name = os.path.basename(source_path.rstrip(os.sep))
 
@@ -60,8 +60,14 @@ def save_image_tensor(tensor, iteration, image_name, source_path, base_directory
     image = Image.fromarray(array)
 
     # Create the output directory if it doesn't exist
-    output_dir = os.path.join(base_directory, f'{scene_name}_{DATE_STR}')
+    if not is_edit:
+        output_dir = os.path.join(base_directory, f'{scene_name}_{DATE_STR}')
+    else:
+        output_dir = os.path.join(base_directory, f'{scene_name}_{DATE_STR}/edit')
     os.makedirs(output_dir, exist_ok=True)
+
+    if '_' in image_name:
+        image_name = image_name.strip('_')
 
     # Define the image file path
     image_path = os.path.join(output_dir, f'iter{iteration}_{image_name}.png')
@@ -99,13 +105,19 @@ def clone_edited_images(scene):
 
 
 def normalize_noise(noise, device):
-    # Calculate mean and std of the input tensor
-    mean = noise.mean([0, 2, 3])
-    std = noise.std([0, 2, 3])
-    normalize = transforms.Normalize(mean, std)
-    noise = normalize(noise[0]).unsqueeze(0).to(device)
+    # Ensure the noise tensor is on the specified device
+    noise = noise.to(device)
 
-    return noise
+    # Calculate mean and std of the input tensor for each channel
+    mean = noise.mean(dim=(1, 2), keepdim=True)
+    std = noise.std(dim=(1, 2), keepdim=True)
+
+    # Normalize the noise tensor
+    normalized_noise = (noise - mean) / std
+
+    normalized_noise = ((normalized_noise + 1) / 2).clamp(0, 1)
+
+    return normalized_noise
 
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
@@ -120,10 +132,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         "lower_bound": 0.7,
         "upper_bound": 0.98,
         "use_rendered_noise": True,
-        # 'None', 'direct', 'normalized', 'tile-normalized',
-        # 'direct-encoded', 'normalized-encoded', 'tile-normalized-encoded',
-        # 'direct-encoded-concat'
-        "noise_type": "direct-encoded-concat",
+        # "None", "direct", "normalized", "tile-normalized",
+        # "direct-encoded", "normalized-encoded", "tile-normalized-encoded",
+        # "direct-encoded-concat", "direct-encoded-normalized"
+        "noise_type": "direct-encoded-normalized",
         "densification_schedule": "normal",
     }
     wandb.config.update(ip2p_params)
@@ -200,7 +212,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 negative_prompt=""
             )
 
-            for camera in scene.getTrainCameras():
+            for camera in tqdm(scene.getTrainCameras()):
                 render_pkg = render(camera, gaussians, pipe, background)
                 image, viewspace_point_tensor, visibility_filter, radii, rendered_noise = (
                     render_pkg["render"],
@@ -216,16 +228,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 W = int(image.shape[2] / 8)
 
                 # Process the noise, following noise_type
-                if ip2p_params['noise_type'] == "direct":
+                if "direct" in ip2p_params['noise_type']:
                     pass
                 elif ip2p_params['noise_type'] == "normalized":
-                    noise = normalize(rendered_noise, torch_device)
+                    rendered_noise = normalize_noise(rendered_noise, torch_device)
                     pass
                 elif ip2p_params['noise_type'] == "tile-normalized":
                     pass
-                elif ip2p_params['noise_type'] == 'direct-encoded':
-                    pass
                 elif ip2p_params['noise_type'] == "normalized-encoded":
+                    rendered_noise = normalize_noise(rendered_noise, torch_device)
                     pass
                 elif ip2p_params['noise_type'] == "tile-normalized-encoded":
                     pass
@@ -255,7 +266,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 # Update edited image
                 camera.edited_image = edited_image
-                ip2p_iteration += 1
+
+                save_image_tensor(edited_image.squeeze(), iteration, camera.image_name, dataset.source_path, is_edit=True)
+
+            ip2p_iteration += 1
 
         if iteration in saving_iterations:
             render_all_cameras(scene, dataset.source_path, gaussians, pipe, background, iteration)

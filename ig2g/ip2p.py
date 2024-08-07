@@ -25,6 +25,8 @@ from rich.console import Console
 from torch import Tensor, nn
 from jaxtyping import Float
 
+import torch
+
 CONSOLE = Console(width=120)
 
 try:
@@ -48,6 +50,36 @@ DDIM_SOURCE = "CompVis/stable-diffusion-v1-4"
 SD_SOURCE = "runwayml/stable-diffusion-v1-5"
 CLIP_SOURCE = "openai/clip-vit-large-patch14"
 IP2P_SOURCE = "timbrooks/instruct-pix2pix"
+
+
+def normalize_latent_noise(noise, device):
+    use_outlier_clipping = True
+    use_scaling = True
+
+    # Ensure the noise tensor is on the specified device
+    noise = noise.to(device)
+
+    # Calculate mean and std of the input tensor for each channel
+    mean = noise.mean(dim=(2, 3), keepdim=True)
+    std = noise.std(dim=(2, 3), keepdim=True)
+
+    # Standardize the noise tensor
+    standardized_noise = (noise - mean) / std
+
+    if use_outlier_clipping:
+        # Clip the values to avoid extreme outliers (optional)
+        clipped_noise = torch.clamp(standardized_noise, -3, 3)
+        standardized_noise = clipped_noise
+
+    if use_scaling:
+        # Scale the clipped tensor to the range [-1, 1] (optional)
+        min_val = standardized_noise.min(dim=2, keepdim=True)[0].min(dim=3, keepdim=True)[0]
+        max_val = standardized_noise.max(dim=2, keepdim=True)[0].max(dim=3, keepdim=True)[0]
+
+        scaled_noise = 2 * (standardized_noise - min_val) / (max_val - min_val) - 1
+        standardized_noise = scaled_noise
+
+    return standardized_noise
 
 
 @dataclass
@@ -156,9 +188,15 @@ class InstructPix2Pix(nn.Module):
             if 'encoded' in noise_type and 'concat' not in noise_type:
                 # project noise into latent using autoencoder
                 noise = self.prepare_noise_latents(noise)
+
+                if 'encoded-normalized' in noise_type:
+                    # normalize noise
+                    noise = normalize_latent_noise(noise, self.device)
+
             elif 'concat' in noise_type:
                 noise_latents = self.prepare_noise_latents(rendered_noise)
                 image_cond_latents[1, :, :, :] = noise_latents
+
 
         latents = self.scheduler.add_noise(latents, noise, self.scheduler.timesteps[0])  # type: ignore
 
