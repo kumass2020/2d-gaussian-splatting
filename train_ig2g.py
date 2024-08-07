@@ -123,22 +123,30 @@ def normalize_noise(noise, device):
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint):
     # Log the ip2p parameters to wandb
     ip2p_params = {
-        "ip2p_start_iter": 20000,
-        "ip2p_cycle_iter": 2500,
-        "ip2p_iter": 3,
-        "guidance_scale": 12.5,
-        "image_guidance_scale": 1.5,
-        "diffusion_steps": 20,
-        "lower_bound": 0.7,
-        "upper_bound": 0.98,
-        "use_rendered_noise": True,
+        "ip2p_start_iter": opt.ip2p_start_iter,
+        "ip2p_cycle_iter": opt.ip2p_cycle_iter,
+        "ip2p_iter": opt.ip2p_iter,
+        "guidance_scale": opt.guidance_scale,
+        "image_guidance_scale": opt.image_guidance_scale,
+        "diffusion_steps": opt.diffusion_steps,
+        "lower_bound": opt.lower_bound,
+        "upper_bound": opt.upper_bound,
+        # "use_rendered_noise": True,
+
         # "None", "direct", "normalized", "tile-normalized",
         # "direct-encoded", "normalized-encoded", "tile-normalized-encoded",
         # "direct-encoded-concat", "direct-encoded-normalized"
-        "noise_type": "direct-encoded-normalized",
-        "densification_schedule": "normal",
+        "noise_type": opt.noise_type,
+        "densification_schedule": opt.densification_schedule,
+        "original_caption": opt.original_caption,
+        "text_prompt": opt.text_prompt,
+        "modified_caption": opt.modified_caption,
     }
     wandb.config.update(ip2p_params)
+
+    print(f"Original caption: {ip2p_params['original_caption']}")
+    print(f"Edit instruction: {ip2p_params['text_prompt']}")
+    print(f"Modified caption: {ip2p_params['modified_caption']}")
 
     ip2p_iteration = 0
 
@@ -205,7 +213,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 and ip2p_iteration < ip2p_params['ip2p_iter']):
             # load base text embedding using classifier free guidance
             text_embedding = ip2p.pipe._encode_prompt(
-                "Make it look like it just snowed.",
+                ip2p_params['text_prompt'],
                 device=torch_device,
                 num_images_per_prompt=1,
                 do_classifier_free_guidance=True,

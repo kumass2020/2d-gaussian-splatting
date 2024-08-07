@@ -192,7 +192,6 @@ class InstructPix2Pix(nn.Module):
                 if 'encoded-normalized' in noise_type:
                     # normalize noise
                     noise = normalize_latent_noise(noise, self.device)
-
             elif 'concat' in noise_type:
                 noise_latents = self.prepare_noise_latents(rendered_noise)
                 image_cond_latents[1, :, :, :] = noise_latents

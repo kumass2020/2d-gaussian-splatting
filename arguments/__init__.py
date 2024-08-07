@@ -92,6 +92,21 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+
+        self.ip2p_start_iter = 20_000
+        self.ip2p_cycle_iter = 2500
+        self.ip2p_iter = 3
+        self.guidance_scale = 12.5
+        self.image_guidance_scale = 1.5
+        self.diffusion_steps = 20
+        self.lower_bound = 0.7
+        self.upper_bound = 0.98
+        self.noise_type = "None"
+        self.densification_schedule = "normal"
+        self.original_caption = "A photo of stump."
+        self.text_prompt = "Make it look like it just snowed."
+        self.modified_caption = "A photo of stump, which looks like it just snowed."
+
         super().__init__(parser, "Optimization Parameters")
 
 def get_combined_args(parser : ArgumentParser):
