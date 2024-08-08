@@ -20,7 +20,7 @@ def calculate_clip_score(images, prompts):
 
 
 class DirectionalSimilarity(nn.Module):
-    def __init__(self, tokenizer, text_encoder, image_processor, image_encoder, device):
+    def __init__(self, device):
         super().__init__()
         # self.tokenizer = tokenizer
         # self.text_encoder = text_encoder

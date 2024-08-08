@@ -39,6 +39,7 @@ from datetime import datetime
 
 # Set up a global variable for date_str to use the same directory in a run
 DATE_STR = datetime.now().strftime('%y%m%d-%H%M')
+is_clip_initialized = False
 
 
 def save_image_tensor(tensor, iteration, image_name, source_path, is_edit=False, base_directory='./output_ig2g'):
@@ -426,7 +427,11 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     renderArgs):
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dir_similarity = DirectionalSimilarity(device=torch_device)
+    global is_clip_initialized
+
+    if not is_clip_initialized:
+        dir_similarity = DirectionalSimilarity(device=torch_device)
+        is_clip_initialized = True
 
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/reg_loss', Ll1.item(), iteration)
