@@ -1,7 +1,15 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchmetrics.functional.multimodal import clip_score
 from functools import partial
+
+from transformers import (
+    CLIPTokenizer,
+    CLIPTextModelWithProjection,
+    CLIPVisionModelWithProjection,
+    CLIPImageProcessor,
+)
 
 clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
 
@@ -12,16 +20,28 @@ def calculate_clip_score(images, prompts):
 
 
 class DirectionalSimilarity(nn.Module):
-    def __init__(self, tokenizer, text_encoder, image_processor, image_encoder):
+    def __init__(self, tokenizer, text_encoder, image_processor, image_encoder, device):
         super().__init__()
+        # self.tokenizer = tokenizer
+        # self.text_encoder = text_encoder
+        # self.image_processor = image_processor
+        # self.image_encoder = image_encoder
+
+        clip_id = "openai/clip-vit-large-patch14"
+        tokenizer = CLIPTokenizer.from_pretrained(clip_id)
+        text_encoder = CLIPTextModelWithProjection.from_pretrained(clip_id).to(device)
+        image_processor = CLIPImageProcessor.from_pretrained(clip_id)
+        image_encoder = CLIPVisionModelWithProjection.from_pretrained(clip_id).to(device)
+
         self.tokenizer = tokenizer
         self.text_encoder = text_encoder
         self.image_processor = image_processor
         self.image_encoder = image_encoder
+        self.device = device
 
     def preprocess_image(self, image):
         image = self.image_processor(image, return_tensors="pt")["pixel_values"]
-        return {"pixel_values": image.to(device)}
+        return {"pixel_values": image.to(self.device)}
 
     def tokenize_text(self, text):
         inputs = self.tokenizer(
@@ -31,7 +51,7 @@ class DirectionalSimilarity(nn.Module):
             truncation=True,
             return_tensors="pt",
         )
-        return {"input_ids": inputs.input_ids.to(device)}
+        return {"input_ids": inputs.input_ids.to(self.device)}
 
     def encode_image(self, image):
         preprocessed_image = self.preprocess_image(image)

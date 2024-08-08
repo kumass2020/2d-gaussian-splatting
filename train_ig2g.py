@@ -30,6 +30,7 @@ except ImportError:
     TENSORBOARD_FOUND = False
 
 from ig2g.ip2p import InstructPix2Pix
+from diffusion.metrics import DirectionalSimilarity, calculate_clip_score
 import wandb
 from PIL import Image
 import numpy as np
@@ -269,7 +270,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
                 # resize to original image size (often not necessary)
                 if (edited_image.size() != rendered_image.size()):
-                    edited_image = torch.nn.functional.interpolate(edited_image, size=rendered_image.size()[2:],
+                    edited_image = torch.nn.functional.interpolate(edited_image,
+                                                                   size=rendered_image.size()[2:],
                                                                    mode='bilinear')
 
                 # Update edited image
@@ -339,7 +341,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 tb_writer.add_scalar('train_loss_patches/normal_loss', ema_normal_for_log, iteration)
 
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end),
-                            testing_iterations, scene, render, (pipe, background))
+                            testing_iterations, ip2p_params, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)
@@ -420,9 +422,11 @@ def prepare_output_and_logger(args):
 
 
 @torch.no_grad()
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene: Scene, renderFunc,
+def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, ip2p_params, scene: Scene, renderFunc,
                     renderArgs):
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    dir_similarity = DirectionalSimilarity(device=torch_device)
 
     if tb_writer:
         tb_writer.add_scalar('train_loss_patches/reg_loss', Ll1.item(), iteration)
@@ -444,6 +448,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                 psnr_test = 0.0
                 lpips_test = 0.0
                 ssim_test = 0.0
+                clip_score = 0.0
+                directional_similarity_score = 0.0
+
                 for idx, viewpoint in enumerate(config['cameras']):
                     render_pkg = renderFunc(viewpoint, scene.gaussians, *renderArgs)
                     image = torch.clamp(render_pkg["render"], 0.0, 1.0)
@@ -486,6 +493,19 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     lpips_test += lpips(image, gt_image).mean().double()
                     ssim_test += ssim(image, gt_image).mean().double()
 
+                    # CLIP score, CLIP directional similarity
+                    if iteration > ip2p_params['ip2p_start_iter']:
+                        original_image = gt_image
+                        edited_image = image
+                        original_caption = ip2p_params['original_caption']
+                        modified_caption = ip2p_params['modified_caption']
+
+                        _clip_score = calculate_clip_score(edited_image, modified_caption)
+                        _directional_similarity_score = dir_similarity(original_image, edited_image, original_caption, modified_caption)
+
+                        clip_score += _clip_score
+                        directional_similarity_score += _directional_similarity_score.double().detach().cpu()
+
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])
                 lpips_test /= len(config['cameras'])
@@ -494,17 +514,29 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                                                                                          l1_test, psnr_test, ssim_test,
                                                                                          lpips_test))
 
+                if iteration > ip2p_params['ip2p_start_iter']:
+                    clip_score /= len(config['cameras'])
+                    directional_similarity_score /= len(config['cameras'])
+                    print(f"\n[ITER {iteration}] Evaluating {config['name']}: "
+                          f"CLIP Score {clip_score} Directional Similarity {directional_similarity_score}")
+
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
+
                 # Log evaluation metrics to wandb
-                wandb.log({
+                test_log = {
                     f"{config['name']} L1 Loss": l1_test,
                     f"{config['name']} PSNR": psnr_test,
                     f"{config['name']} SSIM": ssim_test,
                     f"{config['name']} LPIPS": lpips_test,
-                    "Iteration": iteration
-                })
+                }
+                if iteration > ip2p_params['ip2p_start_iter']:
+                    test_log.update({
+                        f"{config['name']} CLIP Score": clip_score,
+                        f"{config['name']} Directional Similarity": directional_similarity_score
+                    })
+                wandb.log(test_log)
 
         torch.cuda.empty_cache()
 
