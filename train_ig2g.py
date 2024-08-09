@@ -38,8 +38,9 @@ from torchvision import transforms
 from datetime import datetime
 
 # Set up a global variable for date_str to use the same directory in a run
-DATE_STR = datetime.now().strftime('%y%m%d-%H%M')
+DATE_STR = datetime.now().strftime('%y%m%d-%H%M%S')
 is_clip_initialized = False
+dir_similarity = None
 
 
 def save_image_tensor(tensor, iteration, image_name, source_path, is_edit=False, base_directory='./output_ig2g'):
@@ -428,6 +429,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     global is_clip_initialized
+    global dir_similarity
 
     if not is_clip_initialized:
         dir_similarity = DirectionalSimilarity(device=torch_device)
@@ -505,11 +507,28 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                         original_caption = ip2p_params['original_caption']
                         modified_caption = ip2p_params['modified_caption']
 
+                        def tensor_to_image(tensor):
+                            # Ensure the tensor is on the CPU and detached from the computation graph
+                            tensor = tensor.detach().cpu()
+
+                            # Convert tensor to numpy array
+                            array = tensor.numpy()
+
+                            # Convert the array to (H, W, C) format
+                            array = np.transpose(array, (1, 2, 0))
+
+                            # Convert array to uint8 type for image saving
+                            array = (array * 255).astype(np.uint8)
+
+                            # Create an Image object
+                            image = Image.fromarray(array)
+                            return image
+
                         _clip_score = calculate_clip_score(edited_image, modified_caption)
                         _directional_similarity_score = dir_similarity(original_image, edited_image, original_caption, modified_caption)
 
                         clip_score += _clip_score
-                        directional_similarity_score += _directional_similarity_score.double().detach().cpu()
+                        directional_similarity_score += _directional_similarity_score.double().detach().cpu().item()
 
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])

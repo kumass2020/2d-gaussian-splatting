@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchmetrics.functional.multimodal import clip_score
 from functools import partial
+import numpy as np
 
 from transformers import (
     CLIPTokenizer,
@@ -14,8 +15,10 @@ from transformers import (
 clip_score_fn = partial(clip_score, model_name_or_path="openai/clip-vit-base-patch16")
 
 def calculate_clip_score(images, prompts):
-    images_int = (images * 255).astype("uint8")
-    clip_score = clip_score_fn(torch.from_numpy(images_int).permute(0, 3, 1, 2), prompts).detach()
+    images_int = (images * 255).to(torch.int).unsqueeze(0)
+    clip_score = clip_score_fn(images_int, prompts).detach()
+    # images_int = (images * 255).astype("uint8")
+    # clip_score = clip_score_fn(torch.from_numpy(images_int).permute(0, 3, 1, 2), prompts).detach()
     return round(float(clip_score), 4)
 
 
@@ -40,7 +43,8 @@ class DirectionalSimilarity(nn.Module):
         self.device = device
 
     def preprocess_image(self, image):
-        image = self.image_processor(image, return_tensors="pt")["pixel_values"]
+        image_int = (image * 255).to(torch.int).unsqueeze(0)
+        image = self.image_processor(image_int, return_tensors="pt")["pixel_values"]
         return {"pixel_values": image.to(self.device)}
 
     def tokenize_text(self, text):
