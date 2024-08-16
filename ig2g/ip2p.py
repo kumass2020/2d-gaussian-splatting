@@ -26,6 +26,7 @@ from torch import Tensor, nn
 from jaxtyping import Float
 
 import torch
+import wandb
 
 CONSOLE = Console(width=120)
 
@@ -52,10 +53,7 @@ CLIP_SOURCE = "openai/clip-vit-large-patch14"
 IP2P_SOURCE = "timbrooks/instruct-pix2pix"
 
 
-def normalize_latent_noise(noise, device):
-    use_outlier_clipping = True
-    use_scaling = True
-
+def normalize_latent_noise(noise, device, use_outlier_clipping=False, use_scaling=False):
     # Ensure the noise tensor is on the specified device
     noise = noise.to(device)
 
@@ -148,6 +146,7 @@ class InstructPix2Pix(nn.Module):
             lower_bound: float = 0.70,
             upper_bound: float = 0.98,
             noise_type: str = "None",
+            noise_reg: str = "None",
     ) -> torch.Tensor:
         """Edit an image for Instruct-NeRF2NeRF using InstructPix2Pix
         Args:
@@ -191,7 +190,20 @@ class InstructPix2Pix(nn.Module):
 
                 if 'encoded-normalized' in noise_type:
                     # normalize noise
-                    noise = normalize_latent_noise(noise, self.device)
+                    if noise_reg == 'outlier':
+                        use_outlier_clipping = True
+                        use_scaling = False
+                    elif noise_reg == 'scaling':
+                        use_outlier_clipping = False
+                        use_scaling = True
+                    elif ('outlier' in noise_reg) and ('scaling' in noise_reg):
+                        use_outlier_clipping = True
+                        use_scaling = True
+                    else:
+                        use_outlier_clipping = False
+                        use_scaling = False
+                    noise = normalize_latent_noise(noise, self.device, use_outlier_clipping, use_scaling)
+
             elif 'concat' in noise_type:
                 noise_latents = self.prepare_noise_latents(rendered_noise)
                 image_cond_latents[1, :, :, :] = noise_latents

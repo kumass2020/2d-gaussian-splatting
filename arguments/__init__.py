@@ -101,7 +101,12 @@ class OptimizationParams(ParamGroup):
         self.diffusion_steps = 20
         self.lower_bound = 0.7
         self.upper_bound = 0.98
+        # "None", "direct", "normalized", "tile-normalized",
+        # "direct-encoded", "normalized-encoded", "tile-normalized-encoded",
+        # "direct-encoded-concat", "direct-encoded-normalized"
         self.noise_type = "None"
+        # "None", "outlier", "scaling", "outlier-scaling"
+        self.noise_reg = "outlier"
         self.densification_schedule = "normal"
         self.original_caption = "A photo of stump."
         self.text_prompt = "Make it look like it just snowed."

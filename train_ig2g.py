@@ -140,6 +140,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # "direct-encoded", "normalized-encoded", "tile-normalized-encoded",
         # "direct-encoded-concat", "direct-encoded-normalized"
         "noise_type": opt.noise_type,
+        "noise_reg": opt.noise_reg,
         "densification_schedule": opt.densification_schedule,
         "original_caption": opt.original_caption,
         "text_prompt": opt.text_prompt,
@@ -267,7 +268,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                     diffusion_steps=ip2p_params['diffusion_steps'],
                     lower_bound=ip2p_params['lower_bound'],
                     upper_bound=ip2p_params['upper_bound'],
-                    noise_type=ip2p_params['noise_type']
+                    noise_type=ip2p_params['noise_type'],
+                    noise_reg=ip2p_params['noise_reg'],
                 )
 
                 # resize to original image size (often not necessary)
@@ -582,8 +584,15 @@ if __name__ == "__main__":
     args = parser.parse_args(sys.argv[1:])
     args.save_iterations.append(args.iterations)
 
+    # notes="outlier=True, scaling=False"
+    # notes = "random noise"
+    notes = "."
+
     # Initialize wandb and log all arguments
-    wandb.init(project="2DGS-InstructGaussians2Gaussians")
+    wandb.init(
+        project="2DGS-InstructGaussians2Gaussians",
+        notes=notes
+    )
     wandb.config.update(args)
 
     print("Optimizing " + args.model_path)
