@@ -213,8 +213,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
         # ip2p
         if (iteration > ip2p_params['ip2p_start_iter']
-                and iteration % int(ip2p_params['ip2p_cycle_iter'] / len(scene.getTrainCameras())) == 1
-                and ip2p_iteration < ip2p_params['ip2p_iter'] * len(scene.getTrainCameras())):
+                and iteration % ip2p_params['ip2p_cycle_iter'] == 1
+                and ip2p_iteration < ip2p_params['ip2p_iter']):
             # load base text embedding using classifier free guidance
             text_embedding = ip2p.pipe._encode_prompt(
                 ip2p_params['text_prompt'],
@@ -224,65 +224,64 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 negative_prompt=""
             )
 
-            # for camera in tqdm(scene.getTrainCameras()):
-            camera = get_identical_camera(viewpoint_cam)
-            render_pkg = render(camera, gaussians, pipe, background)
-            image, viewspace_point_tensor, visibility_filter, radii, rendered_noise = (
-                render_pkg["render"],
-                render_pkg["viewspace_points"],
-                render_pkg["visibility_filter"],
-                render_pkg["radii"],
-                render_pkg["rend_noise"]
-            )
+            for camera in tqdm(scene.getTrainCameras()):
+                render_pkg = render(camera, gaussians, pipe, background)
+                image, viewspace_point_tensor, visibility_filter, radii, rendered_noise = (
+                    render_pkg["render"],
+                    render_pkg["viewspace_points"],
+                    render_pkg["visibility_filter"],
+                    render_pkg["radii"],
+                    render_pkg["rend_noise"]
+                )
 
-            # Downsample the rendered noise to latent size
-            C = image.shape[0]
-            H = int(image.shape[1] / 8)
-            W = int(image.shape[2] / 8)
+                # Downsample the rendered noise to latent size
+                C = image.shape[0]
+                H = int(image.shape[1] / 8)
+                W = int(image.shape[2] / 8)
 
-            # Process the noise, following noise_type
-            if "direct" in ip2p_params['noise_type']:
-                pass
-            elif ip2p_params['noise_type'] == "normalized":
-                rendered_noise = normalize_noise(rendered_noise, torch_device)
-                pass
-            elif ip2p_params['noise_type'] == "tile-normalized":
-                pass
-            elif ip2p_params['noise_type'] == "normalized-encoded":
-                rendered_noise = normalize_noise(rendered_noise, torch_device)
-                pass
-            elif ip2p_params['noise_type'] == "tile-normalized-encoded":
-                pass
+                # Process the noise, following noise_type
+                if "direct" in ip2p_params['noise_type']:
+                    pass
+                elif ip2p_params['noise_type'] == "normalized":
+                    rendered_noise = normalize_noise(rendered_noise, torch_device)
+                    pass
+                elif ip2p_params['noise_type'] == "tile-normalized":
+                    pass
+                elif ip2p_params['noise_type'] == "normalized-encoded":
+                    rendered_noise = normalize_noise(rendered_noise, torch_device)
+                    pass
+                elif ip2p_params['noise_type'] == "tile-normalized-encoded":
+                    pass
 
-            rendered_image = image.unsqueeze(0)
-            original_image = camera.original_image.unsqueeze(0)
-            rendered_noise = rendered_noise.unsqueeze(0)
+                rendered_image = image.unsqueeze(0)
+                original_image = camera.original_image.unsqueeze(0)
+                rendered_noise = rendered_noise.unsqueeze(0)
 
-            # edit the image using ip2p
-            edited_image = ip2p.edit_image(
-                text_embedding.to(torch_device),
-                rendered_image.to(torch_device),
-                original_image.to(torch_device),
-                rendered_noise.to(torch_device),
-                guidance_scale=ip2p_params['guidance_scale'],  # text guidance scale
-                image_guidance_scale=ip2p_params['image_guidance_scale'],
-                diffusion_steps=ip2p_params['diffusion_steps'],
-                lower_bound=ip2p_params['lower_bound'],
-                upper_bound=ip2p_params['upper_bound'],
-                noise_type=ip2p_params['noise_type'],
-                noise_reg=ip2p_params['noise_reg'],
-            )
+                # edit the image using ip2p
+                edited_image = ip2p.edit_image(
+                    text_embedding.to(torch_device),
+                    rendered_image.to(torch_device),
+                    original_image.to(torch_device),
+                    rendered_noise.to(torch_device),
+                    guidance_scale=ip2p_params['guidance_scale'],  # text guidance scale
+                    image_guidance_scale=ip2p_params['image_guidance_scale'],
+                    diffusion_steps=ip2p_params['diffusion_steps'],
+                    lower_bound=ip2p_params['lower_bound'],
+                    upper_bound=ip2p_params['upper_bound'],
+                    noise_type=ip2p_params['noise_type'],
+                    noise_reg=ip2p_params['noise_reg'],
+                )
 
-            # resize to original image size (often not necessary)
-            if (edited_image.size() != rendered_image.size()):
-                edited_image = torch.nn.functional.interpolate(edited_image,
-                                                               size=rendered_image.size()[2:],
-                                                               mode='bilinear')
+                # resize to original image size (often not necessary)
+                if (edited_image.size() != rendered_image.size()):
+                    edited_image = torch.nn.functional.interpolate(edited_image,
+                                                                   size=rendered_image.size()[2:],
+                                                                   mode='bilinear')
 
-            # Update edited image
-            camera.edited_image = edited_image
+                # Update edited image
+                camera.edited_image = edited_image
 
-            save_image_tensor(edited_image.squeeze(), iteration, camera.image_name, dataset.source_path, is_edit=True)
+                save_image_tensor(edited_image.squeeze(), iteration, camera.image_name, dataset.source_path, is_edit=True)
 
             ip2p_iteration += 1
 
@@ -409,7 +408,7 @@ def prepare_output_and_logger(args):
         #     unique_str = str(uuid.uuid4())
         # args.model_path = os.path.join("./output/", unique_str[0:10])
 
-        args.model_path = os.path.join("./output/", DATE_STR)
+        args.model_path = os.path.join("../../output/", DATE_STR)
 
     # Set up output folder
     print("Output folder: {}".format(args.model_path))

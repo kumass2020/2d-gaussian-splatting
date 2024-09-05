@@ -34,6 +34,7 @@ try:
     from diffusers import (
         DDIMScheduler,
         StableDiffusionInstructPix2PixPipeline,
+        DiffusionPipeline,
     )
     from transformers import logging
 
@@ -103,6 +104,7 @@ class InstructPix2Pix(nn.Module):
         pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(IP2P_SOURCE,
                                                                       torch_dtype=torch.float16,
                                                                       safety_checker=None)
+        # pipe = DiffusionPipeline.from_pretrained(IP2P_SOURCE, torch_dtype=torch.float16, safety_checker=None)
         pipe.scheduler = DDIMScheduler.from_pretrained(DDIM_SOURCE, subfolder="scheduler")
         pipe.scheduler.set_timesteps(100)
         assert pipe is not None
@@ -132,10 +134,12 @@ class InstructPix2Pix(nn.Module):
         self.unet = pipe.unet
         self.auto_encoder = pipe.vae
 
+        is_freeu = False
         # FreeU enabled
-        pipe.enable_freeu(s1=0.9, s2=0.2, b1=1.2, b2=1.4)
+        if is_freeu:
+            pipe.enable_freeu(s1=0.9, s2=0.2, b1=1.2, b2=1.4)
         wandb.config.update({
-            "FreeU": True,
+            "FreeU": is_freeu,
             "FreeU_mode": "default",
             "FreeU_s1": 0.9,
             "FreeU_s2": 0.2,
