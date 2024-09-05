@@ -30,6 +30,8 @@ import wandb
 
 CONSOLE = Console(width=120)
 
+from diffusers.models.unets.unet_2d_condition_intermediate import UNet2DIntermediateConditionModel
+
 try:
     from diffusers import (
         DDIMScheduler,
@@ -94,34 +96,55 @@ class InstructPix2Pix(nn.Module):
     """
 
     def __init__(self, device: Union[torch.device, str], num_train_timesteps: int = 1000,
-                 ip2p_use_full_precision=False) -> None:
+                 ip2p_use_full_precision=False, ip2p_params=None) -> None:
         super().__init__()
 
+        if ip2p_params is None:
+            ip2p_params = {}
         self.device = device
         self.num_train_timesteps = num_train_timesteps
         self.ip2p_use_full_precision = ip2p_use_full_precision
 
-        pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(IP2P_SOURCE,
-                                                                      torch_dtype=torch.float16,
-                                                                      safety_checker=None)
+        # First, load the entire pipeline with from_pretrained to get all the components
+        pipe = StableDiffusionInstructPix2PixPipeline.from_pretrained(
+            IP2P_SOURCE,
+            torch_dtype=torch.float16,
+            safety_checker=None
+        ).to(self.device)
+
+        freeu_mode = ip2p_params['freeu_mode']
+        if freeu_mode == "intermediate":
+            # # Get the configuration of the original UNet2DConditionModel
+            # unet_config = pipe.unet.config  # Extract the UNet config
+            #
+            # # Initialize the custom UNet with the same configuration
+            # custom_unet = UNet2DIntermediateConditionModel(**unet_config).to(self.device)
+            #
+            # # Replace the UNet in the pipeline with the custom one
+            # pipe.unet = custom_unet
+            pass
+
         # pipe = DiffusionPipeline.from_pretrained(IP2P_SOURCE, torch_dtype=torch.float16, safety_checker=None)
         pipe.scheduler = DDIMScheduler.from_pretrained(DDIM_SOURCE, subfolder="scheduler")
         pipe.scheduler.set_timesteps(100)
         assert pipe is not None
         pipe = pipe.to(self.device)
 
-        is_freeu = True
+        is_freeu = ip2p_params['is_freeu']
+        self.freeu_mode = freeu_mode
+        self.is_freeu = is_freeu
+        s1, s2, b1, b2 = ip2p_params['freeu_s1'], ip2p_params['freeu_s2'], ip2p_params['freeu_b1'], ip2p_params['freeu_b2']
         # FreeU enabled
         if is_freeu:
-            pipe.enable_freeu(s1=0.9, s2=0.2, b1=1.2, b2=1.4)
-        wandb.config.update({
-            "FreeU": is_freeu,
-            "FreeU_mode": "default",
-            "FreeU_s1": 0.9,
-            "FreeU_s2": 0.2,
-            "FreeU_b1": 1.2,
-            "FreeU_b2": 1.4
-        })
+            pipe.enable_freeu(s1, s2, b1, b2)
+        # wandb.config.update({
+        #     "FreeU": is_freeu,
+        #     "FreeU_mode": freeu_mode,
+        #     "FreeU_s1": 0.9,
+        #     "FreeU_s2": 0.2,
+        #     "FreeU_b1": 1.2,
+        #     "FreeU_b2": 1.4
+        # })
 
         self.pipe = pipe
 
@@ -176,6 +199,9 @@ class InstructPix2Pix(nn.Module):
         Returns:
             edited image
         """
+        latents_rendered = None
+        noise = None
+        noise_rendered = None
 
         min_step = int(self.num_train_timesteps * lower_bound)
         max_step = int(self.num_train_timesteps * upper_bound)
@@ -201,7 +227,7 @@ class InstructPix2Pix(nn.Module):
 
             if 'encoded' in noise_type and 'concat' not in noise_type:
                 # project noise into latent using autoencoder
-                noise = self.prepare_noise_latents(noise)
+                noise_rendered = self.prepare_noise_latents(noise)
 
                 if 'encoded-normalized' in noise_type:
                     # normalize noise
@@ -217,12 +243,17 @@ class InstructPix2Pix(nn.Module):
                     else:
                         use_outlier_clipping = False
                         use_scaling = False
-                    noise = normalize_latent_noise(noise, self.device, use_outlier_clipping, use_scaling)
+                    noise_rendered = normalize_latent_noise(noise_rendered, self.device, use_outlier_clipping, use_scaling)
+
+                if self.freeu_mode == "intermediate":
+                    noise = torch.randn_like(latents)
+                    latents_rendered = self.scheduler.add_noise(latents, noise_rendered, self.scheduler.timesteps[0])
+                else:
+                    noise = noise_rendered
 
             elif 'concat' in noise_type:
                 noise_latents = self.prepare_noise_latents(rendered_noise)
                 image_cond_latents[1, :, :, :] = noise_latents
-
 
         latents = self.scheduler.add_noise(latents, noise, self.scheduler.timesteps[0])  # type: ignore
 
@@ -234,7 +265,14 @@ class InstructPix2Pix(nn.Module):
                 latent_model_input = torch.cat([latents] * 3)
                 latent_model_input = torch.cat([latent_model_input, image_cond_latents], dim=1)
 
-                noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
+                if self.freeu_mode == "intermediate":
+                    latent_model_input_rendered = torch.cat([latents_rendered] * 3)
+                    latent_model_input_rendered = torch.cat([latent_model_input_rendered, image_cond_latents], dim=1)
+                    self.unet.to(self.device)
+                    intermediate_feature = self.unet.forward_intermediate(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings)
+                    noise_pred = self.unet(latent_model_input, intermediate_feature, t, encoder_hidden_states=text_embeddings).sample
+                else:
+                    noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
 
             # perform classifier-free guidance
             noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)
@@ -260,6 +298,10 @@ class InstructPix2Pix(nn.Module):
         Returns:
             Images
         """
+
+        # Check if latents are in float32, if so, cast them to float16
+        if latents.dtype == torch.float32:
+            latents = latents.to(torch.float16)
 
         latents = 1 / CONST_SCALE * latents
 

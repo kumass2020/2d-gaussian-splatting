@@ -111,6 +111,13 @@ class OptimizationParams(ParamGroup):
         self.original_caption = "A photo of stump."
         self.text_prompt = "Make it look like it just snowed."
         self.modified_caption = "A photo of stump, which looks like it just snowed."
+        self.is_freeu = 0
+        # "default", "intermediate"
+        self.freeu_mode = "default"
+        self.freeu_s1 = 0.9
+        self.freeu_s2 = 0.2
+        self.freeu_b1 = 1.2
+        self.freeu_b2 = 1.4
 
         super().__init__(parser, "Optimization Parameters")
 

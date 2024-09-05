@@ -145,6 +145,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         "original_caption": opt.original_caption,
         "text_prompt": opt.text_prompt,
         "modified_caption": opt.modified_caption,
+        "is_freeu": opt.is_freeu,
+        "freeu_mode": opt.freeu_mode,
+        "freeu_s1": opt.freeu_s1,
+        "freeu_s2": opt.freeu_s2,
+        "freeu_b1": opt.freeu_b1,
+        "freeu_b2": opt.freeu_b2
     }
     wandb.config.update(ip2p_params)
 
@@ -164,7 +170,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
 
     torch_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    ip2p = InstructPix2Pix(torch_device, ip2p_use_full_precision=False)
+    ip2p = InstructPix2Pix(torch_device, ip2p_use_full_precision=False, ip2p_params=ip2p_params)
 
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)

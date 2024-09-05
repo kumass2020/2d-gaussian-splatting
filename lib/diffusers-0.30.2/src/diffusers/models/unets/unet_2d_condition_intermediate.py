@@ -68,7 +68,7 @@ class UNet2DConditionOutput(BaseOutput):
     sample: torch.Tensor = None
 
 
-class UNet2DConditionModel(
+class UNet2DIntermediateConditionModel(
     ModelMixin, ConfigMixin, FromOriginalModelMixin, UNet2DConditionLoadersMixin, PeftAdapterMixin
 ):
     r"""
@@ -1097,6 +1097,9 @@ class UNet2DConditionModel(
                 If `return_dict` is True, an [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] is returned,
                 otherwise a `tuple` is returned where the first element is the sample tensor.
         """
+        sample = sample.to(torch.float32)
+        encoder_hidden_states = encoder_hidden_states.to(torch.float32)
+
         # By default samples have to be AT least a multiple of the overall upsampling factor.
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layers).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
@@ -1376,6 +1379,9 @@ class UNet2DConditionModel(
                 If `return_dict` is True, an [`~models.unets.unet_2d_condition.UNet2DConditionOutput`] is returned,
                 otherwise a `tuple` is returned where the first element is the sample tensor.
         """
+        sample = sample.to(torch.float32)
+        encoder_hidden_states = encoder_hidden_states.to(torch.float32)
+
         # By default samples have to be AT least a multiple of the overall upsampling factor.
         # The overall upsampling factor is equal to 2 ** (# num of upsampling layers).
         # However, the upsampling interpolation output size can be forced to fit any upsampling size
@@ -1419,7 +1425,7 @@ class UNet2DConditionModel(
 
         # 1. time
         t_emb = self.get_time_embed(sample=sample, timestep=timestep)
-        emb = self.time_embedding(t_emb, timestep_cond)
+        emb = self.time_embedding(t_emb.to(torch.float32), timestep_cond)
         aug_emb = None
 
         class_emb = self.get_class_embed(sample=sample, class_labels=class_labels)
