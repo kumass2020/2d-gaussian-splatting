@@ -110,10 +110,25 @@ class InstructPix2Pix(nn.Module):
         assert pipe is not None
         pipe = pipe.to(self.device)
 
+        is_freeu = True
+        # FreeU enabled
+        if is_freeu:
+            pipe.enable_freeu(s1=0.9, s2=0.2, b1=1.2, b2=1.4)
+        wandb.config.update({
+            "FreeU": is_freeu,
+            "FreeU_mode": "default",
+            "FreeU_s1": 0.9,
+            "FreeU_s2": 0.2,
+            "FreeU_b1": 1.2,
+            "FreeU_b2": 1.4
+        })
+
         self.pipe = pipe
 
         # improve memory performance
         pipe.enable_attention_slicing()
+
+        CONSOLE.print("InstructPix2Pix loaded!")
 
         self.scheduler = pipe.scheduler
         self.alphas = self.scheduler.alphas_cumprod.to(self.device)  # type: ignore
@@ -133,21 +148,6 @@ class InstructPix2Pix(nn.Module):
 
         self.unet = pipe.unet
         self.auto_encoder = pipe.vae
-
-        is_freeu = False
-        # FreeU enabled
-        if is_freeu:
-            pipe.enable_freeu(s1=0.9, s2=0.2, b1=1.2, b2=1.4)
-        wandb.config.update({
-            "FreeU": is_freeu,
-            "FreeU_mode": "default",
-            "FreeU_s1": 0.9,
-            "FreeU_s2": 0.2,
-            "FreeU_b1": 1.2,
-            "FreeU_b2": 1.4
-        })
-
-        CONSOLE.print("InstructPix2Pix loaded!")
 
     def edit_image(
             self,
