@@ -199,10 +199,6 @@ class InstructPix2Pix(nn.Module):
         Returns:
             edited image
         """
-        latents_rendered = None
-        noise = None
-        noise_rendered = None
-
         min_step = int(self.num_train_timesteps * lower_bound)
         max_step = int(self.num_train_timesteps * upper_bound)
 
@@ -213,6 +209,10 @@ class InstructPix2Pix(nn.Module):
         self.scheduler.set_timesteps(diffusion_steps)
 
         with torch.no_grad():
+            latents_rendered = None
+            noise = None
+            noise_rendered = None
+
             # prepare image and image_cond latents
             latents = self.imgs_to_latent(image)  # image: (1, 3, 412, 622) | latents: (1, 4, 51, 77)
 
@@ -269,8 +269,12 @@ class InstructPix2Pix(nn.Module):
                     latent_model_input_rendered = torch.cat([latents_rendered] * 3)
                     latent_model_input_rendered = torch.cat([latent_model_input_rendered, image_cond_latents], dim=1)
                     self.unet.to(self.device)
-                    intermediate_feature = self.unet.forward_intermediate(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings)
-                    noise_pred = self.unet(latent_model_input, intermediate_feature, t, encoder_hidden_states=text_embeddings).sample
+                    # intermediate_feature = self.unet.forward_intermediate(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings)
+                    # noise_pred = self.unet(latent_model_input, intermediate_feature, t, encoder_hidden_states=text_embeddings).sample
+                    intermediate_feature = self.unet.forward_intermediate(latent_model_input, t,
+                                                                          encoder_hidden_states=text_embeddings)
+                    noise_pred = self.unet.forward_fused(latent_model_input_rendered, intermediate_feature, t,
+                                           encoder_hidden_states=text_embeddings).sample
                 else:
                     noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
 
