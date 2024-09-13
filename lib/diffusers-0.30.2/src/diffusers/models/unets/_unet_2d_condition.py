@@ -1542,8 +1542,8 @@ class UNet2DConditionModel(
             sample = sample + mid_block_additional_residual
 
         # 5. up
-        # for i, upsample_block in enumerate(self.up_blocks):
-        #     is_final_block = i == len(self.up_blocks) - 1
+        for i, upsample_block in enumerate(self.up_blocks):
+            is_final_block = i == len(self.up_blocks) - 1
 
             # res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
             # down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
@@ -1554,7 +1554,6 @@ class UNet2DConditionModel(
         self,
         sample: torch.Tensor,
         intermediate_feature,
-        lambda_intermediate: float,
         timestep: Union[torch.Tensor, float, int],
         encoder_hidden_states: torch.Tensor,
         class_labels: Optional[torch.Tensor] = None,
@@ -1792,7 +1791,7 @@ class UNet2DConditionModel(
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
 
             # weighted sum of two branches
-            res_samples = [res_samples_1[i] * (1.0-lambda_intermediate) + res_samples_2[i] * lambda_intermediate for i in range(len(res_samples_1))]
+            res_samples = [res_samples_1[i] * 0.0 + res_samples_2[i] * 1.0 for i in range(len(res_samples_1))]
 
             # if we have not reached the final block and need to forward the
             # upsample size, we do it here

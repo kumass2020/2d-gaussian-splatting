@@ -150,7 +150,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         "freeu_s1": opt.freeu_s1,
         "freeu_s2": opt.freeu_s2,
         "freeu_b1": opt.freeu_b1,
-        "freeu_b2": opt.freeu_b2
+        "freeu_b2": opt.freeu_b2,
+        "noise_guidance_scale": opt.noise_guidance_scale,
+        "noise_guidance_scale2": opt.noise_guidance_scale2,
+        "lambda_intermediate": opt.lambda_intermediate,
     }
     wandb.config.update(ip2p_params)
 

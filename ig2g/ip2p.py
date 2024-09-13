@@ -30,8 +30,6 @@ import wandb
 
 CONSOLE = Console(width=120)
 
-from diffusers.models.unets.unet_2d_condition_intermediate import UNet2DIntermediateConditionModel
-
 try:
     from diffusers import (
         DDIMScheduler,
@@ -101,6 +99,9 @@ class InstructPix2Pix(nn.Module):
 
         if ip2p_params is None:
             ip2p_params = {}
+            self.ip2p_params = {}
+        else:
+            self.ip2p_params = ip2p_params
         self.device = device
         self.num_train_timesteps = num_train_timesteps
         self.ip2p_use_full_precision = ip2p_use_full_precision
@@ -137,14 +138,6 @@ class InstructPix2Pix(nn.Module):
         # FreeU enabled
         if is_freeu:
             pipe.enable_freeu(s1, s2, b1, b2)
-        # wandb.config.update({
-        #     "FreeU": is_freeu,
-        #     "FreeU_mode": freeu_mode,
-        #     "FreeU_s1": 0.9,
-        #     "FreeU_s2": 0.2,
-        #     "FreeU_b1": 1.2,
-        #     "FreeU_b2": 1.4
-        # })
 
         self.pipe = pipe
 
@@ -245,7 +238,7 @@ class InstructPix2Pix(nn.Module):
                         use_scaling = False
                     noise_rendered = normalize_latent_noise(noise_rendered, self.device, use_outlier_clipping, use_scaling)
 
-                if self.freeu_mode == "intermediate":
+                if self.freeu_mode in ["intermediate", "intermediate-reverse", "cfg"]:
                     noise = torch.randn_like(latents)
                     latents_rendered = self.scheduler.add_noise(latents, noise_rendered, self.scheduler.timesteps[0])
                 else:
@@ -265,26 +258,56 @@ class InstructPix2Pix(nn.Module):
                 latent_model_input = torch.cat([latents] * 3)
                 latent_model_input = torch.cat([latent_model_input, image_cond_latents], dim=1)
 
-                if self.freeu_mode == "intermediate":
+                # "intermediate": backbone - random noise; skip - rendered noise
+                # "intermediate-reverse": backbone - rendered noise; skip - random noise
+                if self.freeu_mode in ["intermediate", "intermediate-reverse"]:
                     latent_model_input_rendered = torch.cat([latents_rendered] * 3)
                     latent_model_input_rendered = torch.cat([latent_model_input_rendered, image_cond_latents], dim=1)
                     self.unet.to(self.device)
-                    # intermediate_feature = self.unet.forward_intermediate(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings)
-                    # noise_pred = self.unet(latent_model_input, intermediate_feature, t, encoder_hidden_states=text_embeddings).sample
-                    intermediate_feature = self.unet.forward_intermediate(latent_model_input, t,
-                                                                          encoder_hidden_states=text_embeddings)
-                    noise_pred = self.unet.forward_fused(latent_model_input_rendered, intermediate_feature, t,
-                                           encoder_hidden_states=text_embeddings).sample
+
+                    if self.freeu_mode == "intermediate":
+                        intermediate_feature = self.unet.forward_intermediate(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings)
+                        noise_pred = self.unet.forward_fused(latent_model_input,
+                                                             intermediate_feature,
+                                                             lambda_intermediate=self.ip2p_params['lambda_intermediate'],
+                                                             timestep=t,
+                                                             encoder_hidden_states=text_embeddings).sample
+                    elif self.freeu_mode == "intermediate-reverse":
+                        intermediate_feature = self.unet.forward_intermediate(latent_model_input, t,
+                                                                              encoder_hidden_states=text_embeddings)
+                        noise_pred = self.unet.forward_fused(latent_model_input_rendered,
+                                                             intermediate_feature,
+                                                             lambda_intermediate=self.ip2p_params['lambda_intermediate'],
+                                                             timestep=t,
+                                                             encoder_hidden_states=text_embeddings).sample
+                elif self.freeu_mode == "cfg":
+                    latent_model_input_rendered = torch.cat([latents_rendered] * 3)
+                    latent_model_input_rendered = torch.cat([latent_model_input_rendered, image_cond_latents], dim=1)
+                    self.unet.to(self.device)
+                    rendered_noise_pred = self.unet(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings).sample
+                    noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
                 else:
                     noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
 
             # perform classifier-free guidance
             noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)
-            noise_pred = (
-                    noise_pred_uncond
-                    + guidance_scale * (noise_pred_text - noise_pred_image)
-                    + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
-            )
+            if self.freeu_mode == "cfg":
+                noise_guidance_scale = self.ip2p_params['noise_guidance_scale']
+                noise_guidance_scale2 = self.ip2p_params['noise_guidance_scale2']
+                rendered_pred_text, rendered_pred_image, rendered_pred_uncond = rendered_noise_pred.chunk(3)
+                noise_pred = (
+                        noise_pred_uncond
+                        + guidance_scale * (noise_pred_text - noise_pred_image)
+                        + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
+                        + noise_guidance_scale * (rendered_pred_image - noise_pred_uncond)
+                        + noise_guidance_scale2 * (rendered_pred_image - noise_pred_image)
+                )
+            else:
+                noise_pred = (
+                        noise_pred_uncond
+                        + guidance_scale * (noise_pred_text - noise_pred_image)
+                        + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
+                )
 
             # get previous sample, continue loop
             latents = self.scheduler.step(noise_pred, t, latents).prev_sample

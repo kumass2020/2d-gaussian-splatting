@@ -104,6 +104,7 @@ class OptimizationParams(ParamGroup):
         # "None", "direct", "normalized", "tile-normalized",
         # "direct-encoded", "normalized-encoded", "tile-normalized-encoded",
         # "direct-encoded-concat", "direct-encoded-normalized"
+        # "encoded-normalized"
         self.noise_type = "None"
         # "None", "outlier", "scaling", "outlier-scaling"
         self.noise_reg = "outlier"
@@ -112,12 +113,15 @@ class OptimizationParams(ParamGroup):
         self.text_prompt = "Make it look like it just snowed."
         self.modified_caption = "A photo of stump, which looks like it just snowed."
         self.is_freeu = 0
-        # "default", "intermediate"
+        # "default", "intermediate", "intermediate-reverse", "cfg"
         self.freeu_mode = "default"
         self.freeu_s1 = 0.9
         self.freeu_s2 = 0.2
         self.freeu_b1 = 1.2
         self.freeu_b2 = 1.4
+        self.noise_guidance_scale = 1.0
+        self.noise_guidance_scale2 = 0.0
+        self.lambda_intermediate = 1.0
 
         super().__init__(parser, "Optimization Parameters")
 
