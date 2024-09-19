@@ -119,7 +119,7 @@ class OptimizationParams(ParamGroup):
         self.freeu_s2 = 0.2
         self.freeu_b1 = 1.2
         self.freeu_b2 = 1.4
-        self.noise_guidance_scale = 1.0
+        self.noise_guidance_scale = 0.0
         self.noise_guidance_scale2 = 0.0
         self.lambda_intermediate = 1.0
 
