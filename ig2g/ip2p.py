@@ -16,6 +16,7 @@
 
 # Modified from https://github.com/ashawkey/stable-dreamfusion/blob/main/nerf/sd.py
 
+import os
 import sys
 from dataclasses import dataclass
 from typing import Union
@@ -23,10 +24,12 @@ from typing import Union
 import torch
 from rich.console import Console
 from torch import Tensor, nn
-from jaxtyping import Float
+import torch.fft as fft
 
-import torch
+from jaxtyping import Float
 import wandb
+
+os.environ["COMMANDLINE_ARGS"] = '--precision full --no-half'
 
 CONSOLE = Console(width=120)
 
@@ -52,6 +55,31 @@ DDIM_SOURCE = "CompVis/stable-diffusion-v1-4"
 SD_SOURCE = "runwayml/stable-diffusion-v1-5"
 CLIP_SOURCE = "openai/clip-vit-large-patch14"
 IP2P_SOURCE = "timbrooks/instruct-pix2pix"
+
+
+def get_low_or_high_fft(x, scale, is_low=True):
+    # FFT
+    x_freq = fft.fftn(x.float(), dim=(-2, -1))
+    x_freq = fft.fftshift(x_freq, dim=(-2, -1))
+    B, C, H, W = x_freq.shape
+
+    # extract
+    if is_low:
+        mask = torch.zeros((B, C, H, W), device=x.device)
+        crow, ccol = H // 2, W // 2
+        mask[..., crow - int(crow * scale):crow + int(crow * scale),
+        ccol - int(ccol * scale):ccol + int(ccol * scale)] = 1
+    else:
+        mask = torch.ones((B, C, H, W), device=x.device)
+        crow, ccol = H // 2, W // 2
+        mask[..., crow - int(crow * scale):crow + int(crow * scale),
+        ccol - int(ccol * scale):ccol + int(ccol * scale)] = 0
+    x_freq = x_freq * mask
+
+    # IFFT
+    x_freq = fft.ifftshift(x_freq, dim=(-2, -1))
+    x_filtered = fft.ifftn(x_freq, dim=(-2, -1)).real
+    return x_filtered
 
 
 def normalize_latent_noise(noise, device, use_outlier_clipping=False, use_scaling=False):
@@ -248,14 +276,43 @@ class InstructPix2Pix(nn.Module):
                 noise_latents = self.prepare_noise_latents(rendered_noise)
                 image_cond_latents[1, :, :, :] = noise_latents
 
+        latents_0 = latents.clone()
         latents = self.scheduler.add_noise(latents, noise, self.scheduler.timesteps[0])  # type: ignore
 
         # sections of code used from https://github.com/huggingface/diffusers/blob/main/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion_instruct_pix2pix.py
         for i, t in enumerate(self.scheduler.timesteps):
             # predict the noise residual with unet, NO grad!
             with torch.no_grad():
+                if self.ip2p_params['is_noise_calibration']:
+                    ### Noise Calibration(Algorithm 1)
+                    N = self.ip2p_params['noise_calibration_steps']
+                    a_t = self.alphas[T]
+                    x_r = image_cond_latents
+                    sqrt_one_minus_at = (1 - a_t).sqrt()
+                    scale = self.ip2p_params['noise_calibration_scale']
+                    for _ in range(N):
+                        # x = a_t.sqrt() * x_r + sqrt_one_minus_at * noise
+                        # x = x.to(dtype=torch.float16)
+
+                        # e_t_theta = self.model.apply_model(x, t, c, **kwargs)
+                        x = latents.to(dtype=torch.float16)
+                        latent_model_input = torch.cat([x] * 3)
+                        latent_model_input = torch.cat([latent_model_input, image_cond_latents], dim=1)
+                        noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
+                        # noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)
+                        # noise_pred_text, noise_pred_image, e_t_theta = noise_pred.chunk(3)
+                        noise_pred_text, e_t_theta, noise_pred_uncond = noise_pred.chunk(3)
+                        x_0_t = (x - sqrt_one_minus_at * e_t_theta) / a_t.sqrt()
+                        e_t = e_t_theta + a_t.sqrt() / sqrt_one_minus_at * (
+                                    get_low_or_high_fft(x_0_t, scale, is_low=False) - get_low_or_high_fft(x_r, scale,
+                                                                                                          is_low=False))
+
+                    latent_model_input = a_t.sqrt() * x_r + sqrt_one_minus_at * e_t
+
+
                 # pred noise
-                latent_model_input = torch.cat([latents] * 3)
+                if not self.ip2p_params['is_noise_calibration']:
+                    latent_model_input = torch.cat([latents] * 3)
                 latent_model_input = torch.cat([latent_model_input, image_cond_latents], dim=1)
 
                 # "intermediate": backbone - random noise; skip - rendered noise
@@ -287,7 +344,7 @@ class InstructPix2Pix(nn.Module):
                     rendered_noise_pred = self.unet(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings).sample
                     noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
                 else:
-                    noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
+                    noise_pred = self.unet(latent_model_input.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
 
             # perform classifier-free guidance
             noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)

@@ -122,6 +122,9 @@ class OptimizationParams(ParamGroup):
         self.noise_guidance_scale = 0.0
         self.noise_guidance_scale2 = 0.0
         self.lambda_intermediate = 1.0
+        self.is_noise_calibration = 0
+        self.noise_calibration_steps = 3
+        self.noise_calibration_scale = 1.0
 
         super().__init__(parser, "Optimization Parameters")
 

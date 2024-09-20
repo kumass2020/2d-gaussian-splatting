@@ -154,6 +154,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         "noise_guidance_scale": opt.noise_guidance_scale,
         "noise_guidance_scale2": opt.noise_guidance_scale2,
         "lambda_intermediate": opt.lambda_intermediate,
+        "is_noise_calibration": opt.is_noise_calibration,
+        "noise_calibration_steps": opt.noise_calibration_steps,
+        "noise_calibration_scale": opt.noise_calibration_scale
     }
     wandb.config.update(ip2p_params)
 
