@@ -1166,7 +1166,7 @@ class UNet2DConditionModel(
         )
 
         # 2. pre-process
-        sample = self.conv_in(sample)
+        sample = self.conv_in(sample)   # (3, 8, 51, 77) -> (3, 320, 51, 77)
 
         # 2.5 GLIGEN position net
         if cross_attention_kwargs is not None and cross_attention_kwargs.get("gligen", None) is not None:
@@ -1214,9 +1214,9 @@ class UNet2DConditionModel(
                     additional_residuals["additional_residuals"] = down_intrablock_additional_residuals.pop(0)
 
                 sample, res_samples = downsample_block(
-                    hidden_states=sample,
+                    hidden_states=sample,   # (3, 320, 51, 77)
                     temb=emb,
-                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_hidden_states=encoder_hidden_states,    # (3, 77, 768)
                     attention_mask=attention_mask,
                     cross_attention_kwargs=cross_attention_kwargs,
                     encoder_attention_mask=encoder_attention_mask,
