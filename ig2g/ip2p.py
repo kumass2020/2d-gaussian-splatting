@@ -281,34 +281,6 @@ class InstructPix2Pix(nn.Module):
 
         with torch.no_grad():
             if self.ip2p_params['is_noise_calibration']:
-                # ### Noise Calibration(Algorithm 1)
-                # N = self.ip2p_params['noise_calibration_steps']
-                # a_t = self.alphas[T]
-                # x_r = image_cond_latents
-                # sqrt_one_minus_at = (1 - a_t).sqrt()
-                # scale = self.ip2p_params['noise_calibration_scale']
-                # for _ in range(N):
-                #     # x = a_t.sqrt() * x_r + sqrt_one_minus_at * noise
-                #     # x = x.to(dtype=torch.float16)
-                #
-                #     # e_t_theta = self.model.apply_model(x, t, c, **kwargs)
-                #     x = latents.to(dtype=torch.float16)
-                #
-                #     latent_model_input = torch.cat([x] * 3)
-                #     latent_model_input = torch.cat([latent_model_input, image_cond_latents], dim=1)
-                #     noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
-                #     # noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)
-                #     # noise_pred_text, noise_pred_image, e_t_theta = noise_pred.chunk(3)
-                #     noise_pred_text, e_t_theta, noise_pred_uncond = noise_pred.chunk(3)
-                #
-                #     x_0_t = (x - sqrt_one_minus_at * e_t_theta) / a_t.sqrt()
-                #     e_t = e_t_theta + a_t.sqrt() / sqrt_one_minus_at * (
-                #                 get_low_or_high_fft(x_0_t, scale, is_low=False) - get_low_or_high_fft(x_r, scale,
-                #                                                                                       is_low=False))
-                #
-                # # latent_model_input = a_t.sqrt() * x_r + sqrt_one_minus_at * e_t
-                # latents = self.scheduler.add_noise(latents, e_t, self.scheduler.timesteps[0])  # type: ignore
-
                 ### Noise Calibration(Algorithm 1)
                 x_r = image_cond_latents[0].unsqueeze(0)
                 N = self.ip2p_params['noise_calibration_steps']
@@ -373,10 +345,10 @@ class InstructPix2Pix(nn.Module):
                     latent_model_input_rendered = torch.cat([latent_model_input_rendered, image_cond_latents], dim=1)
                     latent_model_input_concat = torch.cat([latent_model_input, latent_model_input_rendered], dim=1)
                     self.unet.to(self.device)
-                    # rendered_noise_pred = self.unet(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings).sample
-                    # noise_pred = self.unet(latent_model_input.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
-                    noise_pred = self.unet(latent_model_input_concat.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
-                    noise_pred, rendered_noise_pred = noise_pred.chunk(2)
+                    rendered_noise_pred = self.unet(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings).sample
+                    noise_pred = self.unet(latent_model_input.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
+                    # noise_pred = self.unet(latent_model_input_concat.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
+                    # noise_pred, rendered_noise_pred = noise_pred.chunk(2)
                 else:
                     noise_pred = self.unet(latent_model_input.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
 
@@ -395,10 +367,22 @@ class InstructPix2Pix(nn.Module):
                             + noise_guidance_scale2 * (rendered_pred_image - noise_pred_image)
                     )
                 elif self.freeu_mode == "cfg-simple":
+                    # noise_pred = (
+                    #         noise_pred_uncond
+                    #         + guidance_scale * 3.0 * (rendered_pred_text - rendered_pred_image)
+                    #         + image_guidance_scale * 8.0 * (rendered_pred_image - rendered_pred_text)
+                    # )
+
+                    # noise_pred = (
+                    #         noise_pred_uncond
+                    #         + guidance_scale * (rendered_pred_text - rendered_pred_image)
+                    #         + image_guidance_scale * 5.0 * (rendered_pred_image - rendered_pred_text)
+                    # )
+
                     noise_pred = (
-                            noise_pred_uncond
-                            + guidance_scale * (noise_pred_text - rendered_pred_image)
-                            + image_guidance_scale * (rendered_pred_image - noise_pred_uncond)
+                            rendered_pred_uncond
+                            + guidance_scale * (noise_pred_text - noise_pred_image)
+                            + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
                     )
             else:
                 noise_pred = (
