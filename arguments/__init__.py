@@ -113,7 +113,7 @@ class OptimizationParams(ParamGroup):
         self.text_prompt = "Make it look like it just snowed."
         self.modified_caption = "A photo of stump, which looks like it just snowed."
         self.is_freeu = 0
-        # "default", "intermediate", "intermediate-reverse", "cfg"
+        # "default", "intermediate", "intermediate-reverse", "cfg", "cfg-simple"
         self.freeu_mode = "default"
         self.freeu_s1 = 0.9
         self.freeu_s2 = 0.2
@@ -125,6 +125,10 @@ class OptimizationParams(ParamGroup):
         self.is_noise_calibration = 0
         self.noise_calibration_steps = 3
         self.noise_calibration_scale = 1.0
+        # "default", "linear", "cosine", "lr"
+        self.noise_calibration_scheduling = "default"
+        # 0, 1
+        self.noise_calibration_scale_is_low = 0
 
         super().__init__(parser, "Optimization Parameters")
 

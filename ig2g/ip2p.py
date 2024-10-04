@@ -267,7 +267,7 @@ class InstructPix2Pix(nn.Module):
                         use_scaling = False
                     noise_rendered = normalize_latent_noise(noise_rendered, self.device, use_outlier_clipping, use_scaling)
 
-                if self.freeu_mode in ["intermediate", "intermediate-reverse", "cfg"]:
+                if self.freeu_mode in ["intermediate", "intermediate-reverse", "cfg", "cfg-simple"]:
                     noise = torch.randn_like(latents)
                     latents_rendered = self.scheduler.add_noise(latents, noise_rendered, self.scheduler.timesteps[0])
                 else:
@@ -318,6 +318,8 @@ class InstructPix2Pix(nn.Module):
                 sqrt_one_minus_at = (1 - a_t).sqrt()
                 e_t = noise
                 scale = self.ip2p_params['noise_calibration_scale']
+                is_low = self.ip2p_params['noise_calibration_scale_is_low']
+                # if self.ip2p_params['noise_calibration_scheduling'] == "linear":
 
                 for _ in range(N):
                     # x = a_t.sqrt() * x_r + sqrt_one_minus_at * e_t
@@ -330,8 +332,8 @@ class InstructPix2Pix(nn.Module):
                     noise_pred_text, e_t_theta, noise_pred_uncond = noise_pred.chunk(3)
                     x_0_t = (x - sqrt_one_minus_at * e_t_theta) / a_t.sqrt()
                     e_t = e_t_theta + a_t.sqrt() / sqrt_one_minus_at * (
-                            get_low_or_high_fft(x_0_t, scale, is_low=False) - get_low_or_high_fft(x_r, scale,
-                                                                                                  is_low=False))
+                            get_low_or_high_fft(x_0_t, scale, is_low=is_low) - get_low_or_high_fft(x_r, scale,
+                                                                                                  is_low=is_low))
 
                 # x = a_t.sqrt() * x_r + sqrt_one_minus_at * e_t
                 latents = self.scheduler.add_noise(latents_0, e_t, self.scheduler.timesteps[0])  # type: ignore
@@ -353,41 +355,51 @@ class InstructPix2Pix(nn.Module):
 
                     if self.freeu_mode == "intermediate":
                         intermediate_feature = self.unet.forward_intermediate(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings)
-                        noise_pred = self.unet.forward_fused(latent_model_input,
+                        noise_pred = self.unet.forward_fused(latent_model_input.to(torch.float16),
                                                              intermediate_feature,
                                                              lambda_intermediate=self.ip2p_params['lambda_intermediate'],
                                                              timestep=t,
                                                              encoder_hidden_states=text_embeddings).sample
                     elif self.freeu_mode == "intermediate-reverse":
-                        intermediate_feature = self.unet.forward_intermediate(latent_model_input, t,
+                        intermediate_feature = self.unet.forward_intermediate(latent_model_input.to(torch.float16), t,
                                                                               encoder_hidden_states=text_embeddings)
-                        noise_pred = self.unet.forward_fused(latent_model_input_rendered,
+                        noise_pred = self.unet.forward_fused(latent_model_input_rendered.to(torch.float16),
                                                              intermediate_feature,
                                                              lambda_intermediate=self.ip2p_params['lambda_intermediate'],
                                                              timestep=t,
                                                              encoder_hidden_states=text_embeddings).sample
-                elif self.freeu_mode == "cfg":
+                elif self.freeu_mode in ["cfg", "cfg-simple"]:
                     latent_model_input_rendered = torch.cat([latents_rendered] * 3)
                     latent_model_input_rendered = torch.cat([latent_model_input_rendered, image_cond_latents], dim=1)
+                    latent_model_input_concat = torch.cat([latent_model_input, latent_model_input_rendered], dim=1)
                     self.unet.to(self.device)
-                    rendered_noise_pred = self.unet(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings).sample
-                    noise_pred = self.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample
+                    # rendered_noise_pred = self.unet(latent_model_input_rendered, t, encoder_hidden_states=text_embeddings).sample
+                    # noise_pred = self.unet(latent_model_input.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
+                    noise_pred = self.unet(latent_model_input_concat.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
+                    noise_pred, rendered_noise_pred = noise_pred.chunk(2)
                 else:
                     noise_pred = self.unet(latent_model_input.to(torch.float16), t, encoder_hidden_states=text_embeddings).sample
 
             # perform classifier-free guidance
             noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)
-            if self.freeu_mode == "cfg":
+            if self.freeu_mode in ["cfg", "cfg-simple"]:
                 noise_guidance_scale = self.ip2p_params['noise_guidance_scale']
                 noise_guidance_scale2 = self.ip2p_params['noise_guidance_scale2']
                 rendered_pred_text, rendered_pred_image, rendered_pred_uncond = rendered_noise_pred.chunk(3)
-                noise_pred = (
-                        noise_pred_uncond
-                        + guidance_scale * (noise_pred_text - noise_pred_image)
-                        + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
-                        + noise_guidance_scale * (rendered_pred_image - noise_pred_uncond)
-                        + noise_guidance_scale2 * (rendered_pred_image - noise_pred_image)
-                )
+                if self.freeu_mode == "cfg":
+                    noise_pred = (
+                            noise_pred_uncond
+                            + guidance_scale * (noise_pred_text - noise_pred_image)
+                            + image_guidance_scale * (noise_pred_image - noise_pred_uncond)
+                            + noise_guidance_scale * (rendered_pred_image - noise_pred_uncond)
+                            + noise_guidance_scale2 * (rendered_pred_image - noise_pred_image)
+                    )
+                elif self.freeu_mode == "cfg-simple":
+                    noise_pred = (
+                            noise_pred_uncond
+                            + guidance_scale * (noise_pred_text - rendered_pred_image)
+                            + image_guidance_scale * (rendered_pred_image - noise_pred_uncond)
+                    )
             else:
                 noise_pred = (
                         noise_pred_uncond
